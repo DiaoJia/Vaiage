@@ -1,7 +1,8 @@
 import os
-from langchain.chat_models import ChatOpenAI
-from langchain.schema import SystemMessage, HumanMessage, AIMessage
+from langchain_openai import ChatOpenAI
 
+from langchain.schema import SystemMessage, HumanMessage, AIMessage
+import json
 class ChatAgent:
     def __init__(self, model_name="gpt-3.5-turbo"):
         """Initialize the ChatAgent with specified model"""
@@ -60,18 +61,31 @@ class ChatAgent:
         return response.content
     
     def extract_info_from_message(self, message):
-        """Extract travel information from user message"""
-        # You could use a more sophisticated approach with LLM for this
-        # This is a simple placeholder implementation
-        info = {}
+        """Use LLM to extract structured travel information from user message"""
+
+       
+        field_list = ', '.join(self.required_fields)  
+        system_prompt = f"""Extract the following travel information from the user's message and return JSON:
+    {{
+    {', '.join([f'"{field}": ""' for field in self.required_fields])}
+    }}
+    If any field is missing, leave it as an empty string."""
+
         
-        if "city" in message.lower():
-            info["city"] = message.split("city")[1].split()[0]
-        
-        if "days" in message.lower():
-            for word in message.split():
-                if word.isdigit():
-                    info["days"] = int(word)
-                    break
-        
-        return info
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=message)
+        ]
+
+        try:
+            llm_response = self.model.invoke(messages)
+            #print("LLM response:", llm_response.content)
+
+            extracted_info = json.loads(llm_response.content)
+
+            filtered_info = {field: extracted_info.get(field, "") for field in self.required_fields}
+
+            return filtered_info 
+        except Exception as e:
+            print("Error parsing LLM output:", e)
+            return {field: "" for field in self.required_fields}

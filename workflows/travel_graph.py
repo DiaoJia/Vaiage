@@ -49,11 +49,13 @@ class TravelGraph:
         """Process chat agent step"""
         if user_input:
             # Try to extract information from user input
-            extracted_info = self.chat_agent.extract_info_from_message(user_input)
-            self.state["user_info"].update(extracted_info)
-            
+            extracted_info = self.chat_agent.extract_info_from_message(user_input) 
+            for key, value in extracted_info.items():
+                if value: 
+                    self.state["user_info"][key] = value
+            print(self.state["user_info"])
             # Process the input and update state
-            result = self.chat_agent.collect_info(user_input, self.state["user_info"])
+            result = self.chat_agent.collect_info(user_input, self.state["user_info"]) #check for completion
             
             if result.get("complete", False):
                 return {
