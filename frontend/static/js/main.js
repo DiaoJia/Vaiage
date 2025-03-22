@@ -112,17 +112,24 @@ document.addEventListener('DOMContentLoaded', function() {
                 addChatMessage(data.response, 'assistant');
             }
             
-            // Update UI based on the current step
-            updateUIForCurrentStep(data);
-
-            // If we have attractions at this point, show the recommendations container
-            if (data.attractions || (data.state && data.state.attractions && data.state.attractions.length > 0)) {
-                document.getElementById('recommendations-section').classList.remove('d-none');
+            // Update attractions if provided
+            if (data.attractions) {
+                updateAttractions(data.attractions);
             }
             
-            // If we have itinerary at this point, show the itinerary container
-            if (data.itinerary || (data.state && data.state.itinerary && data.state.itinerary.length > 0)) {
-                document.getElementById('itinerary-section').classList.remove('d-none');
+            // Update map if map data provided
+            if (data.map_data) {
+                updateMap(data.map_data);
+            }
+            
+            // Update itinerary if provided
+            if (data.itinerary) {
+                updateItinerary(data.itinerary);
+            }
+            
+            // Update budget if provided
+            if (data.budget) {
+                updateBudget(data.budget);
             }
         })
         .catch(error => {
@@ -130,51 +137,6 @@ document.addEventListener('DOMContentLoaded', function() {
             loadingSpinner.classList.add('d-none');
             addChatMessage('Sorry, there was an error processing your request. Please try again.', 'assistant');
         });
-    }
-    
-    // Update UI based on current step
-    function updateUIForCurrentStep(data) {
-        // Update attractions if provided
-        if (data.attractions) {
-            updateAttractions(data.attractions);
-        }
-        
-        // Update map if map data provided
-        if (data.map_data) {
-            updateMap(data.map_data);
-        }
-        
-        // Update itinerary if provided
-        if (data.itinerary) {
-            updateItinerary(data.itinerary);
-        }
-        
-        // Update budget if provided
-        if (data.budget) {
-            updateBudget(data.budget);
-        }
-        
-        // Handle specific steps
-        switch (state.step) {
-            case 'recommend':
-                // Show recommendations section
-                document.getElementById('recommendations-section').classList.remove('d-none');
-                // Focus on the map and recommendations
-                document.getElementById('map-container').scrollIntoView({ behavior: 'smooth' });
-                break;
-            
-            case 'route':
-            case 'complete':
-                // Show itinerary section
-                document.getElementById('itinerary-section').classList.remove('d-none');
-                // Focus on the itinerary
-                document.getElementById('itinerary-container').scrollIntoView({ behavior: 'smooth' });
-                break;
-                
-            default:
-                // For other steps, focus on the chat
-                chatContainer.scrollIntoView({ behavior: 'smooth' });
-        }
     }
     
     // Update map with new data

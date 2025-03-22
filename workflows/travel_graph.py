@@ -79,51 +79,22 @@ class TravelGraph:
     
     def _process_information(self, **kwargs):
         """Process information agent step"""
-        # Get city from user_info
         city = self.state["user_info"].get("city")
         if not city:
-            print("Error: No city information found in user_info")
             return {
                 "next_step": "chat",
-                "response": "我需要知道您想去哪个城市旅行。请告诉我您的目的地城市。"
+                "response": "We need to know which city you want to visit."
             }
         
-        print(f"Processing information for city: {city}")
+        # Get attractions for the specified city
+        attractions = self.info_agent.get_attractions(city)
+        self.state["attractions"] = attractions
         
-        try:
-            # Get attractions for the specified city
-            attractions = self.info_agent.get_attractions(city)
-            
-            if not attractions or len(attractions) == 0:
-                print(f"No attractions found for {city}")
-                # Fallback response
-                return {
-                    "next_step": "chat",
-                    "response": f"抱歉，我没有找到关于{city}的景点信息。请尝试另一个城市，或者提供更多信息。"
-                }
-            
-            # Store attractions in state
-            self.state["attractions"] = attractions
-            
-            # Save state to database
-            self.save_state()
-            
-            print(f"Found {len(attractions)} attractions in {city}")
-            
-            # Move to recommend step
-            return {
-                "next_step": "recommend",
-                "response": f"我找到了{len(attractions)}个{city}的景点。现在我可以根据您的喜好推荐一些景点。",
-                "attractions": attractions
-            }
-        except Exception as e:
-            print(f"Error in _process_information: {str(e)}")
-            # Return a user-friendly error message
-            return {
-                "next_step": "chat",
-                "response": "在获取景点信息时发生错误。请重新告诉我您想去哪个城市。",
-                "error": str(e)
-            }
+        return {
+            "next_step": "recommend",
+            "response": f"Found {len(attractions)} attractions in {city}.",
+            "attractions": attractions
+        }
     
     def _process_recommend(self, selected_attraction_ids=None, **kwargs):
         """Process recommend agent step"""
