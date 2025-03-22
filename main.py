@@ -3,6 +3,8 @@ import os
 import json
 from dotenv import load_dotenv
 from workflows.travel_graph import TravelGraph
+import uuid
+import traceback
 
 # Load environment variables
 load_dotenv()
@@ -28,24 +30,65 @@ def index():
 @app.route('/api/process', methods=['POST'])
 def process():
     """Process a step in the travel planning workflow"""
-    data = request.json
-    session_id = session.get('session_id')
-    
-    if not session_id or session_id not in workflows:
-        session_id = os.urandom(16).hex()
-        session['session_id'] = session_id
-        workflows[session_id] = TravelGraph()
-    
-    workflow = workflows[session_id]
-    
-    # Process the current step
-    step_name = data.get('step', 'chat')
-    result = workflow.process_step(step_name, **data)
-    
-    # Add the current state to the result
-    result['state'] = workflow.get_current_state()
-    
-    return jsonify(result)
+    try:
+        data = request.json
+        session_id = session.get('session_id')
+        
+        if not session_id:
+            # Generate a new session ID if none exists
+            session_id = str(uuid.uuid4())
+            session['session_id'] = session_id
+        
+        # Check if workflow exists for this session
+        if session_id not in workflows:
+            # Create a new workflow and try to load state from database
+            workflows[session_id] = TravelGraph(session_id)
+        
+        workflow = workflows[session_id]
+        
+        # Debug print current state
+        print(f"Current state before processing: {json.dumps(workflow.get_current_state(), ensure_ascii=False)}")
+        
+        # Process the current step
+        step_name = data.get('step', 'chat')
+        result = workflow.process_step(step_name, **data)
+        
+        # Auto-process subsequent steps that don't require user input
+        auto_process_steps = ['information', 'strategy']
+        next_step = result.get('next_step')
+        
+        # Only auto-process if user provided input and the next step is in our auto-process list
+        if 'user_input' in data and next_step in auto_process_steps:
+            print(f"Auto-processing next step: {next_step}")
+            
+            # Keep processing steps until we reach a step that requires user input
+            while next_step in auto_process_steps:
+                # Process the next step automatically
+                result = workflow.process_step(next_step)
+                
+                # Update next_step for the next iteration
+                next_step = result.get('next_step')
+                
+                # Break if we've reached a step that requires user input or if completion
+                if next_step not in auto_process_steps or next_step == 'complete':
+                    break
+        
+        # Debug print updated state
+        print(f"Updated state after processing: {json.dumps(workflow.get_current_state(), ensure_ascii=False)}")
+        
+        # Add the current state to the result
+        result['state'] = workflow.get_current_state()
+        
+        return jsonify(result)
+    except Exception as e:
+        # 记录错误并返回友好的错误消息
+        print(f"Error processing request: {str(e)}")
+        traceback.print_exc()
+        return jsonify({
+            "error": "处理请求时发生错误，请重试。",
+            "details": str(e),
+            "response": "抱歉，我遇到了一些问题。请再次告诉我您的旅行计划。"
+        }), 500
 
 @app.route('/api/attractions/<city>')
 def get_attractions(city):
