@@ -1,200 +1,253 @@
-import os
+"""
+This module provides a service for retrieving weather forecast and historical data using the Open-Meteo API.
+
+Open-Meteo API: https://open-meteo.com/, requires no API key.
+
+You should input the latitude and longitude of the location, and the start date and duration of the forecast.
+
+Duration can be up to 16 days. If the end date is beyond 16 days, the module will return the historical average weather.
+
+The returned data is in the following format:
+[
+    {
+        "date": "2024-01-01",
+        "max_temp": "20 °C",
+        "min_temp": "10 °C",
+        "precipitation": "10 mm",
+        "wind_speed": "10 km/h",
+        "precipitation_probability": "10%", not available for historical data
+        "uv_index": "10", not available for historical data
+    },
+    ...
+]
+
+
+"""
+
 import requests
 from datetime import datetime, timedelta
 import json
+import os
 
 class WeatherService:
-    def __init__(self, api_key=None):
-        """Initialize the weather service with API key"""
-        self.api_key = api_key or os.environ.get("WEATHER_API_KEY")
-        self.base_url = "https://api.openweathermap.org/data/2.5"
-        self.cache_file = "data/weather_cache.json"
+    def __init__(self):
+        """Initialize the weather service"""
+        self.forecast_url = "https://api.open-meteo.com/v1/forecast"
+        self.historical_url = "https://archive-api.open-meteo.com/v1/archive"
+        self.cache_file = "weather_cache.json"
         self.cache = self._load_cache()
-    
+
     def _load_cache(self):
         """Load weather cache from file"""
-        try:
+        if os.path.exists(self.cache_file):
             with open(self.cache_file, 'r') as f:
-                return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return {}
-    
+                try:
+                    return json.load(f)
+                except json.JSONDecodeError:
+                    return {}
+        return {}
+
     def _save_cache(self):
         """Save weather cache to file"""
-        os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
         with open(self.cache_file, 'w') as f:
             json.dump(self.cache, f)
-    
-    def _cache_key(self, city, date):
-        """Generate a cache key for a city and date"""
-        return f"{city.lower()}_{date}"
-    
-    def get_weather(self, city, date=None):
-        """Get weather forecast for a city on a specific date"""
-        if not date:
-            date = datetime.now().strftime("%Y-%m-%d")
-        
-        # Check cache first
-        cache_key = self._cache_key(city, date)
-        if cache_key in self.cache:
-            cached_data = self.cache[cache_key]
-            # Check if cache is still valid (less than 6 hours old)
-            if datetime.now().timestamp() - cached_data["timestamp"] < 6 * 3600:
-                return cached_data["data"]
-        
-        # If no API key, return mock data
-        if not self.api_key:
-            return self._get_mock_weather(city, date)
-        
-        # Calculate days from today
+
+    def _cache_key(self, lat, lng, date):
+        """Generate a cache key for a location and date"""
+        return f"{lat}_{lng}_{date}"
+
+    def get_weather(self, lat, lng, start_date, duration):
+        """Get weather forecast or historical data for a location and date range"""
+        start = datetime.strptime(start_date, "%Y-%m-%d")
+        end = start + timedelta(days=duration - 1)
+        today = datetime.now()
+
+        if end <= today + timedelta(days=15):
+            # Use forecast data
+            return self._get_forecast_data(lat, lng, start, end)
+        else:
+            # Use historical data
+            return self._get_historical_estimate(lat, lng, start, end)
+
+    def _get_forecast_data(self, lat, lng, start, end):
+        """Retrieve forecast data from Open-Meteo API"""
+        params = {
+            "latitude": lat,
+            "longitude": lng,
+            "start_date": start.strftime("%Y-%m-%d"),
+            "end_date": end.strftime("%Y-%m-%d"),
+            "daily": ["temperature_2m_max", "temperature_2m_min", "precipitation_sum", "wind_speed_10m_max", "precipitation_probability_mean", "uv_index_max"],
+            "timezone": "auto"
+        }
+        try:
+            response = requests.get(self.forecast_url, params=params)
+            response.raise_for_status()
+            data = response.json()
+            return self._format_weather_data(data)
+        except requests.RequestException as e:
+            print(f"Error fetching forecast data: {e}")
+            return {"error": "Unable to fetch forecast data"}
+
+    def _get_historical_estimate(self, lat, lng, start, end):
+        """Estimate future weather based on historical data"""
+        historical_data = []
+        # Get historical data from past years, ensuring we only request data that's actually in the past
         today = datetime.now().date()
-        target_date = datetime.strptime(date, "%Y-%m-%d").date()
-        days_diff = (target_date - today).days
-        
-        if days_diff < 0:
-            # For past dates, return mock historical data
-            return self._get_mock_weather(city, date, historical=True)
-        elif days_diff <= 7:
-            # For next 7 days, use forecast API
-            url = f"{self.base_url}/forecast"
-            params = {
-                "q": city,
-                "appid": self.api_key,
-                "units": "metric",
-                "cnt": 7  # 7 day forecast
-            }
+        for year_offset in range(1, 5):
+            past_start = start - timedelta(days=365 * year_offset)
+            past_end = end - timedelta(days=365 * year_offset)
             
+            # Skip this year if the end date isn't in the past yet
+            if past_end.date() >= today:
+                print(f"Skipping year offset {year_offset} as data isn't available yet")
+                continue
+            params = {
+                "latitude": lat,
+                "longitude": lng,
+                "start_date": past_start.strftime("%Y-%m-%d"),
+                "end_date": past_end.strftime("%Y-%m-%d"),
+                "daily": ["temperature_2m_max", "temperature_2m_min", "precipitation_sum", "wind_speed_10m_max"],
+                "timezone": "auto"
+            }
             try:
-                response = requests.get(url, params=params)
+                response = requests.get(self.historical_url, params=params)
                 response.raise_for_status()
                 data = response.json()
-                
-                # Extract forecast for the specific date
-                for forecast in data["list"]:
-                    forecast_date = datetime.fromtimestamp(forecast["dt"]).strftime("%Y-%m-%d")
-                    if forecast_date == date:
-                        weather_data = self._format_weather_data(forecast, city)
-                        
-                        # Cache the result
-                        self.cache[cache_key] = {
-                            "data": weather_data,
-                            "timestamp": datetime.now().timestamp()
-                        }
-                        self._save_cache()
-                        
-                        return weather_data
-                
-                # If specific date not found in forecast, return best estimate
-                weather_data = self._format_weather_data(data["list"][0], city)
-                
-                # Cache the result
-                self.cache[cache_key] = {
-                    "data": weather_data,
-                    "timestamp": datetime.now().timestamp()
-                }
-                self._save_cache()
-                
-                return weather_data
-                
-            except Exception as e:
-                print(f"Error fetching weather data: {e}")
-                return self._get_mock_weather(city, date)
-        else:
-            # For dates beyond 7 days, use historical averages or climate data
-            return self._get_mock_weather(city, date)
-    
-    def _format_weather_data(self, raw_data, city):
-        """Format raw weather API response into a clean format"""
-        return {
-            "city": city,
-            "date": datetime.fromtimestamp(raw_data["dt"]).strftime("%Y-%m-%d"),
-            "description": raw_data["weather"][0]["description"],
-            "icon": raw_data["weather"][0]["icon"],
-            "temp": {
-                "day": raw_data["main"]["temp"],
-                "min": raw_data["main"]["temp_min"],
-                "max": raw_data["main"]["temp_max"]
-            },
-            "humidity": raw_data["main"]["humidity"],
-            "wind_speed": raw_data["wind"]["speed"],
-            "precipitation": raw_data.get("rain", {}).get("3h", 0),
-            "source": "openweathermap"
-        }
-    
-    def _get_mock_weather(self, city, date, historical=False):
-        """Generate mock weather data for testing or when API is unavailable"""
-        # Generate a pseudo-random but consistent weather based on city and date
-        city_hash = sum(ord(c) for c in city.lower())
-        date_hash = sum(ord(c) for c in date)
-        combined_hash = (city_hash + date_hash) % 100
+                historical_data.append(data)
+            except requests.RequestException as e:
+                print(f"Error fetching historical data for {past_start.year}: {e}")
+                continue
+
+        if not historical_data:
+            return {"error": "Unable to fetch sufficient historical data"}
+
+        return self._average_historical_data(historical_data)
+
+    def _format_weather_data(self, data):
+        """Format weather data into a user-friendly structure"""
+        formatted_data = []
+        daily = data.get("daily", {})
+        dates = daily.get("time", [])
+        max_temps = daily.get("temperature_2m_max", [])
+        min_temps = daily.get("temperature_2m_min", [])
+        precipitations = daily.get("precipitation_sum", [])
+        wind_speeds = daily.get("wind_speed_10m_max", [])
+        precip_probabilities = daily.get("precipitation_probability_mean", [])
+        uv_indices = daily.get("uv_index_max", [])
+
+        for i in range(len(dates)):
+            formatted_data.append({
+                "date": dates[i],
+                "max_temp": f"{max_temps[i]} °C",
+                "min_temp": f"{min_temps[i]} °C",
+                "precipitation": f"{precipitations[i]} mm",
+                "wind_speed": f"{wind_speeds[i]} km/h" if i < len(wind_speeds) else None,
+                "precipitation_probability": f"{precip_probabilities[i]}%" if i < len(precip_probabilities) else None,
+                "uv_index": f"{uv_indices[i]}" if i < len(uv_indices) else None
+            })
+
+        return formatted_data
+
+    def _average_historical_data(self, historical_data):
+        """Calculate average weather metrics from historical data"""
+        aggregated_data = {}
+        count = 0
+
+        for data in historical_data:
+            daily = data.get("daily", {})
+            dates = daily.get("time", [])
+            max_temps = daily.get("temperature_2m_max", [])
+            min_temps = daily.get("temperature_2m_min", [])
+            precipitations = daily.get("precipitation_sum", [])
+            wind_speeds = daily.get("wind_speed_10m_max", [])
+
+            for i in range(len(dates)):
+                date = dates[i]
+                if date not in aggregated_data:
+                    aggregated_data[date] = {
+                        "max_temp": 0,
+                        "min_temp": 0,
+                        "precipitation": 0,
+                        "wind_speed": 0,
+                        "count": 0
+                    }
+                aggregated_data[date]["max_temp"] += max_temps[i]
+                aggregated_data[date]["min_temp"] += min_temps[i]
+                aggregated_data[date]["precipitation"] += precipitations[i]
+                if i < len(wind_speeds):
+                    aggregated_data[date]["wind_speed"] += wind_speeds[i]
+                aggregated_data[date]["count"] += 1
+
+        averaged_data = []
+        for date, values in aggregated_data.items():
+            averaged_data.append({
+                "date": date,
+                "max_temp": f"{values['max_temp'] / values['count']:.1f} °C",
+                "min_temp": f"{values['min_temp'] / values['count']:.1f} °C",
+                "precipitation": f"{values['precipitation'] / values['count']:.1f} mm",
+                "wind_speed": f"{values['wind_speed'] / values['count']:.1f} km/h",
+            })
+
+        return averaged_data
         
-        # Map the hash to weather conditions
-        if combined_hash < 20:
-            condition = "rainy"
-            icon = "10d"
-        elif combined_hash < 40:
-            condition = "cloudy"
-            icon = "03d"
-        elif combined_hash < 60:
-            condition = "partly cloudy"
-            icon = "02d"
-        else:
-            condition = "sunny"
-            icon = "01d"
+    def test_get_weather(self):
+        """Test the get_weather method with real API call"""
+        # Test with specific coordinates (New York City)
+        lat = 40.7128
+        lng = -74.0060
+        start_date = datetime.now().strftime("%Y-%m-%d")
+        duration = 7
         
-        # Generate pseudo-random temperature based on city and date
-        base_temp = 15  # Base temperature in Celsius
+        print("\n=== Testing get_weather() for forecast ===")
+        print(f"Location: New York City (lat: {lat}, lng: {lng})")
+        print(f"Start date: {start_date}, Duration: {duration} days")
         
-        # Adjust for season (assuming Northern Hemisphere)
-        month = int(date.split('-')[1])
-        season_adj = abs(((month + 5) % 12) - 6) - 3  # -3 for winter, +3 for summer
+        forecast = self.get_weather(lat, lng, start_date, duration)
         
-        # City-specific temperature adjustments
-        if "paris" in city.lower():
-            city_temp = 15
-        elif "london" in city.lower():
-            city_temp = 12
-        elif "rome" in city.lower() or "bangkok" in city.lower():
-            city_temp = 25
-        elif "new york" in city.lower():
-            city_temp = 18
-        elif "tokyo" in city.lower():
-            city_temp = 20
-        else:
-            # Default temperature with slight randomization based on city name
-            city_temp = base_temp + (city_hash % 10)
-        
-        # Calculate final temperature with some randomness
-        final_temp = city_temp + season_adj + (combined_hash % 10) - 5
-        
-        return {
-            "city": city,
-            "date": date,
-            "description": condition,
-            "icon": icon,
-            "temp": {
-                "day": final_temp,
-                "min": final_temp - 5,
-                "max": final_temp + 5
-            },
-            "humidity": 50 + (combined_hash % 40),
-            "wind_speed": 5 + (combined_hash % 20),
-            "precipitation": 0 if condition != "rainy" else 5 + (combined_hash % 10),
-            "source": "mock" if not historical else "historical_mock"
-        }
-    
-    def get_forecast(self, city, start_date, end_date):
-        """Get weather forecast for a range of dates"""
-        start = datetime.strptime(start_date, "%Y-%m-%d")
-        end = datetime.strptime(end_date, "%Y-%m-%d")
-        
-        forecast = []
-        current_date = start
-        
-        while current_date <= end:
-            date_str = current_date.strftime("%Y-%m-%d")
-            weather = self.get_weather(city, date_str)
-            forecast.append(weather)
-            current_date += timedelta(days=1)
+        # Print the raw forecast data
+        print("\nForecast Results:")
+        print(forecast)
         
         return forecast
+    
+    def test_get_historical_estimate(self):
+        """Test the historical estimate functionality with real API call"""
+        # Test with specific coordinates (London)
+        lat = 51.5074
+        lng = -0.1278
+        
+        # Use a future date (1 year from now)
+        start_date = (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%d")
+        duration = 10
+        
+        print("\n=== Testing get_weather() for historical estimate ===")
+        print(f"Location: London (lat: {lat}, lng: {lng})")
+        print(f"Start date: {start_date}, Duration: {duration} days")
+        
+        historical_estimate = self.get_weather(lat, lng, start_date, duration)
+        
+        # Print the raw historical estimate data
+        print("\nHistorical Estimate Results:")
+        print(historical_estimate)
+        
+        return historical_estimate
+
+
+# Main function to run the tests
+if __name__ == "__main__":
+    
+    
+    # Create an instance of the WeatherService
+    weather_service = WeatherService()
+    
+    # Run the tests
+    print("Starting Weather API Tests...")
+    
+    # Test forecast
+    weather_service.test_get_weather()
+    
+    # Test historical estimate
+    weather_service.test_get_historical_estimate()
+    
+
+    print("\nWeather API Tests completed.")
