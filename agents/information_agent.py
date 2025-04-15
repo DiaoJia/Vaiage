@@ -186,8 +186,15 @@ class InformationAgent:
     def _fetch_attractions_from_api(self, city):
         """Fetch attractions from external API using Google Places API"""
         try:
+            # Get city coordinates using geocoding
+            geocode_result = self.poi_api.gmaps.geocode(city)
+            if not geocode_result:
+                print(f"Could not get coordinates for {city}")
+                return []
+                
+            location = geocode_result[0]['geometry']['location']
             # Get initial list of places
-            places_result = self.poi_api.get_poi(city, radius=5000, keyword="tourist attraction")
+            places_result = self.poi_api.get_poi(location, radius=5000, keyword="tourist attraction")
             attractions = []
             
             # Process up to 20 attractions
