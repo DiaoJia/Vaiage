@@ -26,23 +26,26 @@ class ChatAgent:
         if not self.conversation_history:
             self.conversation_history.append(self._init_system_message())
         
+        # Merge new inputs into state
+        if user_input:
+            new_info = self.extract_info_from_message(user_input)
+            for field, value in new_info.items():
+                if value:
+                    state[field] = value
+        
         # Add user input to conversation
         self.conversation_history.append(HumanMessage(content=user_input))
         
-        # Identify missing fields
-        missing_fields = [field for field in self.required_fields if field not in state or not state[field]]
-        
-        if missing_fields:
-            # Create a prompt to collect missing information
-            prompt = f"I need to collect some more information for your trip. Could you please tell me about: {', '.join(missing_fields)}?"
-            
-            # Generate response using LLM
-            self.conversation_history.append(AIMessage(content=prompt))
-            return {"response": prompt, "missing_fields": missing_fields, "complete": False}
-        
-        # If all information is collected
-        self.conversation_history.append(AIMessage(content="Great! I have all the information I need."))
-        return {"response": "Information collection complete", "missing_fields": [], "complete": True}
+        missing = [f for f in self.required_fields if not state.get(f)]
+        if missing:
+            prompt = (
+                "下面还有一些信息没给我，方便告诉我吗？\n" +
+                "\n".join(f"- {field}" for field in missing) +
+                "\n您可以一句话补充多个信息。"
+            )
+            return {"response": prompt, "missing_fields": missing, "complete": False}
+        else:
+            return {"response": "👌 信息收集完毕，准备为您推荐景点。", "missing_fields": [], "complete": True}
     
     def interact_with_user(self, message, state=None):
         """Process user message and generate a response"""
@@ -89,3 +92,6 @@ class ChatAgent:
         except Exception as e:
             print("Error parsing LLM output:", e)
             return {field: "" for field in self.required_fields}
+        
+
+    # 收集信息的过程过于傻缺

@@ -206,3 +206,9 @@ class RouteAgent:
             "attractions": attraction_cost,
             "car_rental": car_cost_daily[budget_level] * num_days if user_prefs.get("car_rental", False) else 0
         }
+    
+    # budget估算为什么全部放在route_agent里？是否应该强调交通成本？
+    
+    # 1. 交通成本估算不够细化
+	# •	目前 transport 是固定 daily cost，没有考虑景点之间真实距离
+	# •	没有基于 distance_matrix 动态估算路线中的交通成本
