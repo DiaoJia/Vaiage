@@ -94,4 +94,4 @@ class ChatAgent:
             return {field: "" for field in self.required_fields}
         
 
-    # 收集信息的过程过于傻缺
+    
