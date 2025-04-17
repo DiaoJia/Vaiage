@@ -15,6 +15,33 @@ document.addEventListener('DOMContentLoaded', function() {
     const recommendationsContainer = document.getElementById('recommendations-container');
     const loadingSpinner = document.getElementById('loading-spinner');
     const resetBtn = document.getElementById('reset-btn');
+    // Containers for step navigation and missing fields alert
+    const stepNav = document.getElementById('step-nav');
+    const missingFieldsContainer = document.getElementById('missing-fields');
+    
+    // Update step navigation highlighting
+    function updateStepNav(step) {
+        const links = stepNav.querySelectorAll('.nav-link');
+        links.forEach(link => {
+            if (link.dataset.step === step) {
+                link.classList.add('active');
+            } else {
+                link.classList.remove('active');
+            }
+        });
+    }
+    
+    // Show missing fields list
+    function showMissingFields(fields) {
+        missingFieldsContainer.innerHTML = '<strong>需要补充的信息：</strong>' +
+            fields.map(f => `<span class="badge bg-warning text-dark me-1">${f}</span>`).join('');
+        missingFieldsContainer.classList.remove('d-none');
+    }
+    
+    // Hide missing fields alert
+    function hideMissingFields() {
+        missingFieldsContainer.classList.add('d-none');
+    }
     
     // Store markers for later reference
     let mapMarkers = [];
@@ -98,6 +125,16 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Update state
             state.step = data.next_step || state.step;
+            // Update step navigation
+            if (data.next_step) {
+                updateStepNav(data.next_step);
+            }
+            // Display or hide missing fields
+            if (data.missing_fields && data.missing_fields.length > 0) {
+                showMissingFields(data.missing_fields);
+            } else {
+                hideMissingFields();
+            }
             
             if (data.state) {
                 if (data.state.user_info) state.userInfo = data.state.user_info;

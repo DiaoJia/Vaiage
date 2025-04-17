@@ -47,35 +47,25 @@ class TravelGraph:
     
     def _process_chat(self, user_input=None, **kwargs):
         """Process chat agent step"""
-        if user_input:
-            # Try to extract information from user input
-            extracted_info = self.chat_agent.extract_info_from_message(user_input) 
-            for key, value in extracted_info.items():
-                if value: 
-                    self.state["user_info"][key] = value
-            print(self.state["user_info"])
-            # Process the input and update state
-            result = self.chat_agent.collect_info(user_input, self.state["user_info"]) #check for completion
-            
-            if result.get("complete", False):
-                return {
-                    "next_step": "information",
-                    "response": result["response"]
-                }
-            else:
-                return {
-                    "next_step": "chat",
-                    "response": result["response"],
-                    "missing_fields": result.get("missing_fields", [])
-                }
-        else:
-            # Initial step, ask for information
-            result = self.chat_agent.collect_info("", {})
-            return {
-                "next_step": "chat",
-                "response": result["response"],
-                "missing_fields": result.get("missing_fields", [])
-            }
+        """Process user chat, collect info incrementally, and advance when complete."""
+        # Collect and merge info
+        result = self.chat_agent.collect_info(user_input or "", self.state["user_info"])
+        # Base response structure
+        base = {
+            "state": self.state,
+            "response": result["response"],
+            "missing_fields": result.get("missing_fields", [])
+        }
+        if not result["complete"]:
+            base["next_step"] = "chat"
+            return base
+        # If complete, chain to information step automatically
+        info = self._process_information()
+        info.update({
+            "previous_response": result["response"],
+            "state": self.state
+        })
+        return info
     
     def _process_information(self, **kwargs):
         """Process information agent step"""
@@ -93,7 +83,9 @@ class TravelGraph:
         return {
             "next_step": "recommend",
             "response": f"Found {len(attractions)} attractions in {city}.",
-            "attractions": attractions
+            "attractions": attractions,
+            "map_data": self.recommend_agent.generate_map_data(attractions),
+            "state": self.state
         }
     
     def _process_recommend(self, selected_attraction_ids=None, **kwargs):
