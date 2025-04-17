@@ -153,6 +153,8 @@ class POIApi:
             max_width=max_width,
             max_height=max_height
         )
+    
+
 class InformationAgent:
     def __init__(self, api_key=None):
         """Initialize InformationAgent with API key for external services"""
@@ -236,6 +238,7 @@ class InformationAgent:
             print(f"Error fetching attractions: {e}")
             return []
     
+    # 这部分有待完善（直接让gpt生成？）
     def _guess_category(self, place):
         """Guess the category of an attraction from its types"""
         types = place.get("types", [])
@@ -255,6 +258,7 @@ class InformationAgent:
         else:
             return "other"
     
+    # 这部分有待完善（直接让gpt生成？）
     def _estimate_visit_duration(self, place):
         """Estimate how long a visit might take based on place type"""
         types = place.get("types", [])
