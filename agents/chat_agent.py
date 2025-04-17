@@ -89,3 +89,6 @@ class ChatAgent:
         except Exception as e:
             print("Error parsing LLM output:", e)
             return {field: "" for field in self.required_fields}
+        
+
+    # 收集信息的过程过于傻缺
