@@ -1,9 +1,9 @@
 # This is a code repo for Application Track of CS194
 
-##### strategy时行程时间有误
+##### strategy阶段反馈租车建议时无视之前用户提供的行程时间
 
-##### 不同预算给的推荐相同
+##### 尝试使用不同预算测试，发现recomment的attractions相同
 
-##### chat agent还是不能记忆之前问过的信息
+##### 第一轮chat agent还是不能记忆之前用户回答过的信息（致命）
 
-##### complete selection需要点击第二次才行
+##### 对于候选attractions的complete selection需要点击第二次才能运转
