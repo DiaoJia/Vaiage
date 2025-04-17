@@ -17,7 +17,9 @@ class StrategyAgent:
         total_available_hours = total_days * 8
         remaining_hours = total_available_hours - total_hours_needed
         
+
         # If we have more than 4 hours left, suggest additional attractions
+        # 是否改为 3h ？
         additional_attractions = []
         if remaining_hours > 4:
             additional_attractions = self._suggest_additional_attractions(
@@ -68,6 +70,7 @@ class StrategyAgent:
         
         return result
     
+    # 该租车判断逻辑是否合理？是否更应该考虑当地具体的交通情况？
     def should_rent_car(self, selected_spots, city, user_prefs):
         """Determine if car rental is recommended based on selected attractions"""
         # If fewer than 2 spots selected, no need for car
