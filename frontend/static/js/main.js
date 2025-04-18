@@ -15,6 +15,33 @@ document.addEventListener('DOMContentLoaded', function() {
     const recommendationsContainer = document.getElementById('recommendations-container');
     const loadingSpinner = document.getElementById('loading-spinner');
     const resetBtn = document.getElementById('reset-btn');
+    // Containers for step navigation and missing fields alert
+    const stepNav = document.getElementById('step-nav');
+    const missingFieldsContainer = document.getElementById('missing-fields');
+    
+    // Update step navigation highlighting
+    function updateStepNav(step) {
+        const links = stepNav.querySelectorAll('.nav-link');
+        links.forEach(link => {
+            if (link.dataset.step === step) {
+                link.classList.add('active');
+            } else {
+                link.classList.remove('active');
+            }
+        });
+    }
+    
+    // Show missing fields list
+    function showMissingFields(fields) {
+        missingFieldsContainer.innerHTML = '<strong>需要补充的信息：</strong>' +
+            fields.map(f => `<span class="badge bg-warning text-dark me-1">${f}</span>`).join('');
+        missingFieldsContainer.classList.remove('d-none');
+    }
+    
+    // Hide missing fields alert
+    function hideMissingFields() {
+        missingFieldsContainer.classList.add('d-none');
+    }
     
     // Store markers for later reference
     let mapMarkers = [];
@@ -98,6 +125,16 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Update state
             state.step = data.next_step || state.step;
+            // Update step navigation
+            if (data.next_step) {
+                updateStepNav(data.next_step);
+            }
+            // Display or hide missing fields
+            if (data.missing_fields && data.missing_fields.length > 0) {
+                showMissingFields(data.missing_fields);
+            } else {
+                hideMissingFields();
+            }
             
             if (data.state) {
                 if (data.state.user_info) state.userInfo = data.state.user_info;
@@ -229,10 +266,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (this.checked) {
                     // Add to selected attractions
                     state.selectedAttractions.push(attraction);
+                    // Add marker to map
+                    addMarkerToMap(attraction);
                 } else {
                     // Remove from selected attractions
                     state.selectedAttractions = state.selectedAttractions.filter(a => a.id !== attraction.id);
+                    // Remove marker from map
+                    removeMarkerFromMap(attraction.id);
                 }
+                // Update map view to show all markers
+                updateMapView();
             });
         });
         
@@ -249,6 +292,49 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         
         recommendationsContainer.appendChild(confirmBtn);
+    }
+    
+    // Add marker to map
+    function addMarkerToMap(attraction) {
+        const colorMap = {
+            "landmark": "red",
+            "museum": "blue",
+            "nature": "green",
+            "entertainment": "purple",
+            "shopping": "orange",
+            "other": "gray"
+        };
+        
+        const iconColor = colorMap[attraction.category] || "gray";
+        
+        const marker = L.marker([attraction.location.lat, attraction.location.lng], {
+            icon: L.divIcon({
+                className: `map-marker marker-${attraction.category}`,
+                html: `<i class="fas fa-map-marker-alt"></i>`,
+                iconSize: [30, 30]
+            })
+        }).addTo(map);
+        
+        marker.bindTooltip(attraction.name);
+        marker.attractionId = attraction.id; // Store attraction ID for later reference
+        mapMarkers.push(marker);
+    }
+
+    // Remove marker from map
+    function removeMarkerFromMap(attractionId) {
+        const markerIndex = mapMarkers.findIndex(m => m.attractionId === attractionId);
+        if (markerIndex !== -1) {
+            map.removeLayer(mapMarkers[markerIndex]);
+            mapMarkers.splice(markerIndex, 1);
+        }
+    }
+
+    // Update map view to show all markers
+    function updateMapView() {
+        if (mapMarkers.length > 0) {
+            const group = new L.featureGroup(mapMarkers);
+            map.fitBounds(group.getBounds().pad(0.1));
+        }
     }
     
     // Update itinerary display
@@ -370,7 +456,147 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.error('Error resetting conversation:', error);
             });
     }
-    
-    // Add initial welcome message
-    // Note: This is already in the HTML, so we don't need to add it again
 });
+
+// Initialize map and related variables
+let map;
+let markersLayer;
+let selectedMarkersLayer;
+let currentAttractions = [];
+let selectedAttractions = [];
+
+// Initialize map when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM loaded, initializing map...');
+    
+    // Check if map container exists
+    const mapContainer = document.getElementById('map');
+    if (!mapContainer) {
+        console.error('Map container not found!');
+        return;
+    }
+    
+    try {
+        // Initialize map with Tokyo coordinates
+        map = L.map('map').setView([35.6762, 139.6503], 13);
+        console.log('Map initialized successfully');
+        
+        // Add OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            maxZoom: 19
+        }).addTo(map);
+        console.log('Tile layer added successfully');
+
+        // Initialize markers layers
+        markersLayer = L.layerGroup().addTo(map);
+        selectedMarkersLayer = L.layerGroup().addTo(map);
+        console.log('Marker layers initialized successfully');
+        
+        // Add a test marker
+        const testMarker = L.marker([35.6762, 139.6503])
+            .bindPopup('Test Marker')
+            .addTo(map);
+        console.log('Test marker added successfully');
+        
+    } catch (error) {
+        console.error('Error initializing map:', error);
+    }
+});
+
+// Update map with new data
+function updateMap(data) {
+    if (!map) return;
+    
+    // Clear existing markers
+    markersLayer.clearLayers();
+    
+    // Update current attractions
+    currentAttractions = data;
+    
+    // Add new markers
+    data.forEach(attraction => {
+        const marker = L.marker([attraction.location.lat, attraction.location.lng])
+            .bindPopup(`
+                <h3>${attraction.name}</h3>
+                <p>${attraction.address}</p>
+                <p>Rating: ${attraction.rating}</p>
+                <button onclick="selectAttraction('${attraction.id}')">Select</button>
+            `);
+        markersLayer.addLayer(marker);
+    });
+    
+    // Fit map to show all markers
+    if (data.length > 0) {
+        const bounds = markersLayer.getBounds();
+        map.fitBounds(bounds);
+    }
+}
+
+// Handle attraction selection
+function selectAttraction(attractionId) {
+    if (!map) return;
+    
+    // Find the selected attraction
+    const attraction = currentAttractions.find(a => a.id === attractionId);
+    if (!attraction) return;
+    
+    // Add to selected attractions if not already selected
+    if (!selectedAttractions.some(a => a.id === attractionId)) {
+        selectedAttractions.push(attraction);
+        updateSelectedAttractionsList();
+        
+        // Add marker to selected layer
+        const marker = L.marker([attraction.location.lat, attraction.location.lng], {
+            icon: L.divIcon({
+                className: 'selected-marker',
+                html: '<div class="selected-marker-inner"></div>',
+                iconSize: [20, 20]
+            })
+        });
+        selectedMarkersLayer.addLayer(marker);
+    }
+}
+
+// Update selected attractions list
+function updateSelectedAttractionsList() {
+    const list = document.getElementById('selected-attractions');
+    if (!list) return;
+    
+    list.innerHTML = '';
+    
+    selectedAttractions.forEach(attraction => {
+        const li = document.createElement('li');
+        li.innerHTML = `
+            <div class="attraction-item">
+                <h4>${attraction.name}</h4>
+                <p>${attraction.address}</p>
+                <button onclick="removeAttraction('${attraction.id}')">Remove</button>
+            </div>
+        `;
+        list.appendChild(li);
+    });
+}
+
+// Remove attraction from selection
+function removeAttraction(attractionId) {
+    if (!map) return;
+    
+    const attraction = selectedAttractions.find(a => a.id === attractionId);
+    if (!attraction) return;
+    
+    selectedAttractions = selectedAttractions.filter(a => a.id !== attractionId);
+    updateSelectedAttractionsList();
+    
+    // Remove marker from selected layer
+    selectedMarkersLayer.eachLayer(layer => {
+        if (layer.getLatLng().equals([attraction.location.lat, attraction.location.lng])) {
+            selectedMarkersLayer.removeLayer(layer);
+        }
+    });
+}
+
+// Make functions available globally
+window.updateMap = updateMap;
+window.selectAttraction = selectAttraction;
+window.removeAttraction = removeAttraction;
