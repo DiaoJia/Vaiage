@@ -9,6 +9,7 @@ class TravelUI:
     def __init__(self, api_base_url="http://127.0.0.1:5000"):
         """Initialize the Travel UI with API base URL"""
         self.api_base_url = api_base_url
+        self.session = requests.Session() 
         self.init_session_state()
         
     def init_session_state(self):
@@ -48,7 +49,7 @@ class TravelUI:
         if st.session_state.current_step == "recommend" and st.session_state.selected_attractions:
             payload["selected_attraction_ids"] = [a["id"] for a in st.session_state.selected_attractions]
         
-        response = requests.post(f"{self.api_base_url}/api/process", json=payload)
+        response = self.session.post(f"{self.api_base_url}/api/process", json=payload)
         return response.json()
     
     def display_chat_history(self):
@@ -266,5 +267,6 @@ class TravelUI:
                 st.info("Complete your trip planning to see your itinerary here.")
 
 if __name__ == "__main__":
-    ui = TravelUI()
-    ui.run()
+    if 'travel_ui' not in st.session_state:
+        st.session_state.travel_ui = TravelUI()
+    st.session_state.travel_ui.run()

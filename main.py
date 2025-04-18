@@ -7,8 +7,11 @@ from workflows.travel_graph import TravelGraph
 # Load environment variables
 load_dotenv()
 
+
 app = Flask(__name__, static_folder="frontend/static", template_folder="frontend/templates")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "travel-ai-secret")
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # 加上这两行！
+app.config['SESSION_COOKIE_SECURE'] = False
 
 # Create a session store for workflows
 workflows = {}
@@ -31,10 +34,13 @@ def process():
     data = request.json
     session_id = session.get('session_id')
     
+
     if not session_id or session_id not in workflows:
         session_id = os.urandom(16).hex()
         session['session_id'] = session_id
         workflows[session_id] = TravelGraph()
+    print(f"当前有效 session_id: {session_id}")  # ✅ 打在生成之后！
+
     
     workflow = workflows[session_id]
     
@@ -121,4 +127,4 @@ if __name__ == '__main__':
             json.dump(sample_data, f)
     
     # Run the app
-    app.run(debug=True)
+    app.run(host="127.0.0.1", port=5000, debug=False)
