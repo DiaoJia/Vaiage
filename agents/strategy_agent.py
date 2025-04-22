@@ -14,7 +14,7 @@ class StrategyAgent:
         total_hours_needed = sum([spot.get("estimated_duration", 2) for spot in selected_spots])
         
         # Assume 8 hours of activity per day
-        total_available_hours = total_days * 8
+        total_available_hours = int(total_days) * 8
         remaining_hours = total_available_hours - total_hours_needed
         
 

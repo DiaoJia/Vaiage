@@ -65,15 +65,23 @@ class ChatAgent:
     
     def extract_info_from_message(self, message):
         """Use LLM to extract structured travel information from user message"""
-
-       
-        field_list = ', '.join(self.required_fields)  
-        system_prompt = f"""Extract the following travel information from the user's message and return JSON:
-    {{
-    {', '.join([f'"{field}": ""' for field in self.required_fields])}
-    }}
-    If any field is missing, leave it as an empty string."""
-
+        
+        system_prompt = f"""Extract the following travel information from the user's message and return JSON.
+        Carefully analyze the message to understand both explicit and implicit information.
+        
+        For example, if the user says "without kids" or "no children", set "kids" to "no".
+        If they mention "all adults", also set "kids" to "no".
+        If they mention family with children, set "kids" to "yes".
+        
+        Pay attention to negations and context. Don't just look for keywords, understand the meaning.
+        
+        Return the following JSON structure:
+        {{
+        {', '.join([f'"{field}": ""' for field in self.required_fields])}
+        }}
+        
+        If any field is missing or unclear, leave it as an empty string.
+        """
         
         messages = [
             SystemMessage(content=system_prompt),

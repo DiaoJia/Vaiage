@@ -56,7 +56,16 @@ class InformationAgent:
         # Car rental service
         self.car_rental_service = CarRentalService(api_key=car_api_key)
 
-    def find_pois(self, lat: float, lng: float, number: int = 10,
+    def city2geocode(self, city: str):
+        """
+        Convert city name to coordinates (latitude and longitude)
+        """
+        coordinates = self.gmaps.geocode(city)
+        if not coordinates:
+            return None
+        return coordinates[0]['geometry']['location']
+    
+    def get_attractions(self, lat: float, lng: float, number: int = 10,
                   poi_type: str = None, sort_by: str = None, radius: int = 5000):
         """
         Find Points of Interest:
@@ -81,7 +90,10 @@ class InformationAgent:
                     "rating": 4.5,
                     "price_level": 2,
                     "opening_hours": ["Monday: 10:00 AM – 5:30 PM", "Tuesday: 10:00 AM – 5:30 PM"],
-                    "address": "151 3rd St, San Francisco, CA 94103"
+                    "address": "151 3rd St, San Francisco, CA 94103",
+                    "location": {"lat": 37.7857, "lng": -122.4011},
+                    "category": "museum",
+                    "estimated_duration": "2 hours"
                 },
                 ...
             ]
@@ -101,8 +113,19 @@ class InformationAgent:
             pid = place.get('place_id')
             details = self.poi_api.get_poi_details(
                 place_id=pid,
-                fields=['name', 'rating', 'price_level', 'opening_hours', 'formatted_address']
+                fields=['name', 'rating', 'price_level', 'opening_hours', 'formatted_address', 'geometry']
             ).get('result', {})
+
+            # Extract location information
+            location = details.get('geometry', {}).get('location', {})
+            
+            # Extract category from the initial search results
+            category = ""
+            if place.get('types') and len(place.get('types')) > 0:
+                category = place.get('types')[0]
+            
+            # Estimate duration based on category and other factors
+            estimated_duration = self.estimate_duration(category, details)
 
             pois.append({
                 'id': pid,
@@ -111,6 +134,12 @@ class InformationAgent:
                 'price_level': details.get('price_level'),
                 'opening_hours': details.get('opening_hours', {}).get('weekday_text'),
                 'address': details.get('formatted_address'),
+                'location': {
+                    'lat': location.get('lat'),
+                    'lng': location.get('lng')
+                },
+                'category': category,
+                'estimated_duration': estimated_duration
             })
 
         # Sort results
@@ -119,6 +148,37 @@ class InformationAgent:
         elif sort_by == 'rating':
             pois.sort(key=lambda x: x.get('rating') or 0, reverse=True)
         return pois
+
+    def estimate_duration(self, category, details):
+        """
+        Estimate the duration for a given category and details.
+        """
+        category_duration = {
+            'restaurant': 2,
+            'museum': 2,
+            'park': 2,
+            'tourist_attraction': 2,
+            'night_club': 3,
+            'shopping_mall': 3,
+            'zoo': 3,
+            'amusement_park': 6
+        }
+        
+
+        # Default duration if category is not found
+        default_duration = 2
+        
+        # Get duration based on category
+        duration = category_duration.get(category, default_duration)
+        
+        # Adjust duration based on rating
+        rating = details.get('rating', 0)
+        if rating > 4.5:
+            duration *= 1.5
+        elif rating < 3:
+            duration *= 0.75
+        
+        return duration
 
     def plan_routes(self, origin: str, destination: str):
         """

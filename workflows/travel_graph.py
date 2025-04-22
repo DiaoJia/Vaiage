@@ -70,14 +70,15 @@ class TravelGraph:
     def _process_information(self, **kwargs):
         """Process information agent step"""
         city = self.state["user_info"].get("city")
-        if not city:
+        city_coordinates = self.info_agent.city2geocode(city)
+        if not city_coordinates:
             return {
                 "next_step": "chat",
                 "response": "We need to know which city you want to visit."
             }
         
         # Get attractions for the specified city
-        attractions = self.info_agent.get_attractions(city)
+        attractions = self.info_agent.get_attractions(city_coordinates["lat"], city_coordinates["lng"], poi_type="tourist_attraction", sort_by="rating")
         self.state["attractions"] = attractions
         
         return {
