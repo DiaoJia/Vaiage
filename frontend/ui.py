@@ -123,12 +123,14 @@ class TravelUI:
                     st.write(f"⭐ {attraction['rating']}")
                 
                 # Show price level
-                price_level = attraction.get("price_level", 2)
-                st.write("💰" * price_level)
+                if attraction["price_level"]:
+                    price_level = attraction.get("price_level", 2)
+                    st.write("💰" * price_level)
                 
                 # Show duration
-                duration = attraction.get("estimated_duration", 1)
-                st.write(f"⏱️ {duration} hours")
+                if "estimated_duration" in attraction:
+                    duration = attraction.get("estimated_duration", 1)
+                    st.write(f"⏱️ {duration} hours")
                 
                 st.divider()
         
