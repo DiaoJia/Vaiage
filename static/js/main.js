@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let map;
     let markersLayer = L.layerGroup();  // Initialize markers layer
     try {
-        map = L.map('map').setView([48.8566, 2.3522], 13); // Default to Paris
+        map = L.map('map').setView([0, 0], 2); // Default to Paris
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap> contributors',
             maxZoom: 19
