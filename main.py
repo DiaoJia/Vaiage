@@ -9,7 +9,7 @@ import requests
 # Load environment variables
 load_dotenv()
 
-app = Flask(__name__, static_folder="static", template_folder="frontend/templates")
+app = Flask(__name__, static_folder="frontend/static", template_folder="frontend/templates")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "travel-ai-secret")
 
 # Configure session
