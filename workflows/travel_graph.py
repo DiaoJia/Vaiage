@@ -50,15 +50,24 @@ class TravelGraph:
         """Process user chat, collect info incrementally, and advance when complete."""
         # Collect and merge info
         result = self.chat_agent.collect_info(user_input or "", self.state["user_info"])
+        
+        # Update state with new information
+        if result.get("state"):
+            # Merge new state with existing state instead of overwriting
+            self.state["user_info"].update(result["state"])
+            print(f"Updated user info: {self.state['user_info']}")  # Debug log
+        
         # Base response structure
         base = {
             "state": self.state,
             "response": result["response"],
             "missing_fields": result.get("missing_fields", [])
         }
+        
         if not result["complete"]:
             base["next_step"] = "chat"
             return base
+            
         # If complete, chain to information step automatically
         info = self._process_information()
         info.update({
