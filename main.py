@@ -1,20 +1,42 @@
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify, session, send_from_directory, send_file
+from flask_session import Session
 import os
 import json
 from dotenv import load_dotenv
 from workflows.travel_graph import TravelGraph
+import requests
 
 # Load environment variables
 load_dotenv()
 
-
-app = Flask(__name__, static_folder="frontend/static", template_folder="frontend/templates")
+app = Flask(__name__, static_folder="static", template_folder="frontend/templates")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "travel-ai-secret")
-app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # 加上这两行！
+
+# Configure session
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_PERMANENT'] = True
+app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour
 app.config['SESSION_COOKIE_SECURE'] = False
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+# Initialize Flask-Session
+Session(app)
+
+# Add static file configuration
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0  # Disable caching
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 # Create a session store for workflows
 workflows = {}
+
+@app.route('/test-image')
+def test_image():
+    return send_file('static/images/background.jpg', mimetype='image/jpeg')
+
+@app.route('/static/images/<path:filename>')
+def serve_image(filename):
+    return send_from_directory('static/images', filename)
 
 @app.route('/')
 def index():
@@ -25,33 +47,53 @@ def index():
         session_id = os.urandom(16).hex()
         session['session_id'] = session_id
         workflows[session_id] = TravelGraph()
+        print(f"Created new session: {session_id}")  # Debug log
+    else:
+        print(f"Using existing session: {session_id}")  # Debug log
     
-    return render_template('index.html')
+    # Load popular attractions
+    try:
+        with open('data/popular_attractions.json', 'r') as f:
+            popular_attractions = json.load(f)
+    except FileNotFoundError:
+        popular_attractions = []
+    
+    return render_template('index.html', popular_attractions=popular_attractions)
 
 @app.route('/api/process', methods=['POST'])
 def process():
     """Process a step in the travel planning workflow"""
-    data = request.json
-    session_id = session.get('session_id')
-    
+    try:
+        data = request.json
+        session_id = session.get('session_id')
 
-    if not session_id or session_id not in workflows:
-        session_id = os.urandom(16).hex()
-        session['session_id'] = session_id
-        workflows[session_id] = TravelGraph()
-    print(f"当前有效 session_id: {session_id}")  # ✅ 打在生成之后！
-
-    
-    workflow = workflows[session_id]
-    
-    # Process the current step
-    step_name = data.get('step', 'chat')
-    result = workflow.process_step(step_name, **data)
-    
-    # Add the current state to the result
-    result['state'] = workflow.get_current_state()
-    
-    return jsonify(result)
+        if not session_id:
+            session_id = os.urandom(16).hex()
+            session['session_id'] = session_id
+            workflows[session_id] = TravelGraph()
+            print(f"Created new session: {session_id}")  # Debug log
+        else:
+            print(f"Using existing session: {session_id}")  # Debug log
+        
+        if session_id not in workflows:
+            workflows[session_id] = TravelGraph()
+            print(f"Recreated workflow for session: {session_id}")  # Debug log
+        
+        workflow = workflows[session_id]
+        print(f"Current state before processing: {workflow.get_current_state()}")  # Debug log
+        
+        # Process the current step
+        step_name = data.get('step', 'chat')
+        result = workflow.process_step(step_name, **data)
+        
+        # Add the current state to the result
+        result['state'] = workflow.get_current_state()
+        print(f"Current state after processing: {workflow.get_current_state()}")  # Debug log
+        
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error in process route: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/attractions/<city>')
 def get_attractions(city):
@@ -127,4 +169,4 @@ if __name__ == '__main__':
             json.dump(sample_data, f)
     
     # Run the app
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    app.run(host="127.0.0.1", port=8000, debug=False)
