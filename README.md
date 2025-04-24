@@ -4,6 +4,4 @@
 
 ##### 尝试使用不同预算测试，发现recomment的attractions相同
 
-##### 第一轮chat agent还是不能记忆之前用户回答过的信息（致命）
-
 ##### 对于候选attractions的complete selection需要点击第二次才能运转
