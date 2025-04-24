@@ -2,7 +2,7 @@
 
 /* Background image for the entire page */
 body {
-    background-image: url('http://localhost:8000/static/images/background.jpg') !important;
+    background-image: url('../images/background.jpg') !important;
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;

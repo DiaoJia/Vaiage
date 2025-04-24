@@ -32,11 +32,11 @@ workflows = {}
 
 @app.route('/test-image')
 def test_image():
-    return send_file('static/images/background.jpg', mimetype='image/jpeg')
+    return send_file('frontend/static/images/background.jpg', mimetype='image/jpeg')
 
 @app.route('/static/images/<path:filename>')
 def serve_image(filename):
-    return send_from_directory('static/images', filename)
+    return send_from_directory('frontend/static/images', filename)
 
 @app.route('/')
 def index():
