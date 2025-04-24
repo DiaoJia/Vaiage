@@ -1,7 +1,7 @@
 import json
 import random
-from langchain.chat_models import ChatOpenAI
-from langchain.schema import SystemMessage, HumanMessage, AIMessage
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 class RecommendAgent:
     def __init__(self, model_name="gpt-3.5-turbo"):
@@ -132,7 +132,7 @@ class RecommendAgent:
 
     # 缓存 LLM 推荐结果（结合 hash(user_prefs+city)）
 	# •	避免重复算同一个用户偏好组合
-    # •	用户多次点击“推荐核心景点”
+    # •	用户多次点击"推荐核心景点"
 	# •	相同用户偏好和城市，结果应该是一样的
 	# •	但 LLM 每次都重新调用，慢而且贵
 

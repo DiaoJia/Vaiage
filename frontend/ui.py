@@ -4,12 +4,32 @@ import json
 import os
 import folium
 from streamlit_folium import folium_static
+from streamlit_folium import st_folium
+from streamlit.components import v1 as components  # 修正导入
+
+# Attraction card template
+ATTRACTION_CARD_TEMPLATE = """
+<div class="attraction-card" aria-label="Attraction: {name}, {city}, {country}">
+    <img src="{image_url}" alt="{name}">
+    <div class="attraction-info">
+        <h4>{rank}. {name}</h4>
+        <p>{city}, {country}</p>
+        <p>{description}</p>
+    </div>
+</div>
+"""
 
 class TravelUI:
     def __init__(self, api_base_url="http://127.0.0.1:5000"):
         """Initialize the Travel UI with API base URL"""
         self.api_base_url = api_base_url
-        self.session = requests.Session() 
+        self.session = requests.Session()
+        try:
+            with open("data/popular_attractions.json", "r") as f:
+                self.popular_attractions = json.load(f)
+        except FileNotFoundError:
+            self.popular_attractions = []
+            st.error("Popular attractions data not found.")
         self.init_session_state()
         
     def init_session_state(self):
@@ -45,7 +65,6 @@ class TravelUI:
             "user_input": user_message
         }
         
-        # Add selected attractions if we're in the recommend step
         if st.session_state.current_step == "recommend" and st.session_state.selected_attractions:
             payload["selected_attraction_ids"] = [a["id"] for a in st.session_state.selected_attractions]
         
@@ -61,45 +80,41 @@ class TravelUI:
                 st.chat_message("assistant").write(message["content"])
     
     def display_map(self, locations=None):
-        """Display map with attractions"""
-        if not locations and not st.session_state.map_data:
-            return
-        
-        data_to_display = locations or st.session_state.map_data
-        
-        # Create map centered on the first location or default to Paris
-        if data_to_display:
-            center_lat = data_to_display[0].get("lat", 48.8566)
-            center_lng = data_to_display[0].get("lng", 2.3522)
-        else:
-            center_lat, center_lng = 48.8566, 2.3522
-        
-        m = folium.Map(location=[center_lat, center_lng], zoom_start=13)
-        
-        # Add markers for each location
-        for i, location in enumerate(data_to_display):
-            tooltip = location.get("name", f"Location {i+1}")
-            category = location.get("category", "other")
+            """Display map with attractions or a default world map"""
+            center_lat, center_lng = 0, 0
+            zoom_start = 2
+
+            data_to_display = locations or st.session_state.map_data
+            if data_to_display:
+                center_lat = data_to_display[0].get("lat", 48.8566)
+                center_lng = data_to_display[0].get("lng", 2.3522)
+                zoom_start = 13
             
-            # Different colors for different categories
-            color_map = {
-                "landmark": "red",
-                "museum": "blue",
-                "nature": "green",
-                "entertainment": "purple",
-                "shopping": "orange",
-                "other": "gray"
-            }
+            m = folium.Map(location=[center_lat, center_lng], zoom_start=zoom_start)
             
-            icon_color = color_map.get(category, "gray")
+            if data_to_display:
+                for i, location in enumerate(data_to_display):
+                    tooltip = location.get("name", f"Location {i+1}")
+                    category = location.get("category", "other")
+                    
+                    color_map = {
+                        "landmark": "red",
+                        "museum": "blue",
+                        "nature": "green",
+                        "entertainment": "purple",
+                        "shopping": "orange",
+                        "other": "gray"
+                    }
+                    
+                    icon_color = color_map.get(category, "gray")
+                    
+                    folium.Marker(
+                        [location.get("lat", center_lat), location.get("lng", center_lng)],
+                        tooltip=tooltip,
+                        icon=folium.Icon(color=icon_color)
+                    ).add_to(m)
             
-            folium.Marker(
-                [location.get("lat", center_lat), location.get("lng", center_lng)],
-                tooltip=tooltip,
-                icon=folium.Icon(color=icon_color)
-            ).add_to(m)
-        
-        folium_static(m)
+            st_folium(m, width=700, height=300)
     
     def display_attractions(self, attractions):
         """Display list of attractions with selection options"""
@@ -116,18 +131,15 @@ class TravelUI:
                     key=f"attr_{attraction['id']}"
                 )
                 if is_selected:
-                    selected_ids.append(attraction["id"])
+                    selected_ids.append(attraction['id'])
                 
-                # Show rating if available
                 if "rating" in attraction:
                     st.write(f"⭐ {attraction['rating']}")
                 
-                # Show price level
                 if attraction["price_level"]:
                     price_level = attraction.get("price_level", 2)
                     st.write("💰" * price_level)
                 
-                # Show duration
                 if "estimated_duration" in attraction:
                     duration = attraction.get("estimated_duration", 1)
                     st.write(f"⏱️ {duration} hours")
@@ -135,6 +147,41 @@ class TravelUI:
                 st.divider()
         
         return selected_ids
+        
+    def display_popular_attractions(self):
+            """Display a scrolling list of popular attractions with CSS auto-scroll"""
+            st.subheader("Top World Attractions")
+            
+            # Load external CSS
+            try:
+                with open("static/css/style.css", "r") as f:
+                    css = f.read()
+                st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+            except FileNotFoundError:
+                st.error("CSS file not found.")
+                return
+            
+            # Generate attractions HTML
+            attractions_html = ""
+            for i, attraction in enumerate(self.popular_attractions, 1):
+                attractions_html += ATTRACTION_CARD_TEMPLATE.format(
+                    rank=i,
+                    name=attraction['name'],
+                    city=attraction['city'],
+                    country=attraction['country'],
+                    image_url=attraction['image_url'],
+                    description=attraction['description']
+                )
+            
+            # Load and render template
+            try:
+                with open("templates/popular_attractions.html", "r") as f:
+                    template = f.read()
+                html_content = template.format(attractions_html=attractions_html)
+                st.markdown(html_content, unsafe_allow_html=True)
+            except FileNotFoundError:
+                st.error("HTML template file not found.")
+                return
     
     def display_itinerary(self, itinerary):
         """Display trip itinerary"""
@@ -168,59 +215,56 @@ class TravelUI:
     
     def run(self):
         """Run the UI application"""
+        # Load background CSS
+        try:
+            with open("static/css/style.css", "r") as f:
+                css = f.read()
+            st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+        except FileNotFoundError:
+            st.error("CSS file not found.")
+        
         st.title("Travel AI Assistant")
         
-        # Sidebar
         with st.sidebar:
             st.header("Trip Planning")
             if st.button("Start New Trip"):
                 self.reset_session()
                 st.rerun()
             
-            # Display current user info
             if st.session_state.user_info:
                 st.subheader("Your Trip Details")
                 for key, value in st.session_state.user_info.items():
                     st.write(f"**{key.capitalize()}:** {value}")
         
-        # Main content area
         tab1, tab2, tab3 = st.tabs(["Chat", "Map & Attractions", "Itinerary"])
         
         with tab1:
-            # Display chat history
             self.display_chat_history()
             
-            # Chat input
-            user_input = st.chat_input("Ask about your trip...")
+            user_input = st.chat_input("Just from here, make your dream journey come true...")
             if user_input:
                 st.session_state.chat_history.append({"role": "user", "content": user_input})
                 
                 with st.spinner("Planning your perfect trip..."):
                     response = self.send_message(user_input)
                     
-                    # Update session state
                     st.session_state.current_step = response.get("next_step", st.session_state.current_step)
                     if "state" in response:
                         state = response["state"]
                         st.session_state.user_info = state.get("user_info", st.session_state.user_info)
                     
-                    # Save attractions
                     if "attractions" in response:
                         st.session_state.attractions = response["attractions"]
                     
-                    # Save map data
                     if "map_data" in response:
                         st.session_state.map_data = response["map_data"]
                     
-                    # Save itinerary
                     if "itinerary" in response:
                         st.session_state.itinerary = response["itinerary"]
                     
-                    # Save budget
                     if "budget" in response:
                         st.session_state.budget = response["budget"]
                     
-                    # Add response to chat history
                     st.session_state.chat_history.append({
                         "role": "assistant", 
                         "content": response.get("response", "I'm processing your request.")
@@ -232,22 +276,20 @@ class TravelUI:
             col1, col2 = st.columns([2, 3])
             
             with col1:
+                self.display_popular_attractions()
+                
                 if st.session_state.attractions:
                     selected_ids = self.display_attractions(st.session_state.attractions)
                     
-                    # Save selected attractions
                     if st.button("Confirm Selection"):
                         selected_attractions = [a for a in st.session_state.attractions if a["id"] in selected_ids]
                         st.session_state.selected_attractions = selected_attractions
                         
-                        # Send selection to backend
                         with st.spinner("Optimizing your itinerary..."):
                             response = self.send_message("Here are my selected attractions")
                             
-                            # Update session state
                             st.session_state.current_step = response.get("next_step", st.session_state.current_step)
                             
-                            # Add response to chat history
                             st.session_state.chat_history.append({
                                 "role": "assistant", 
                                 "content": response.get("response", "I'm processing your selections.")

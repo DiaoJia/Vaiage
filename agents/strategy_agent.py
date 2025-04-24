@@ -1,7 +1,7 @@
 import math
 import random
-from langchain.chat_models import ChatOpenAI
-from langchain.schema import SystemMessage, HumanMessage
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 class StrategyAgent:
     def __init__(self, model_name="gpt-3.5-turbo"):
