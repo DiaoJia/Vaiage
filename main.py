@@ -53,7 +53,7 @@ def index():
     
     # Load popular attractions
     try:
-        with open('data/popular_attractions.json', 'r') as f:
+        with open('frontend/data/popular_attractions.json', 'r') as f:
             popular_attractions = json.load(f)
     except FileNotFoundError:
         popular_attractions = []

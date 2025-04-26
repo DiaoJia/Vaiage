@@ -273,11 +273,11 @@ body {
     position: relative;
 }
 .scroll-content {
-    animation: auto-scroll 20s linear infinite;
+    animation: auto-scroll 10s linear infinite;
 }
 @keyframes auto-scroll {
     0% { transform: translateY(0); }
-    100% { transform: translateY(-50%); }
+    100% { transform: translateY(-100%); }
 }
 .scroll-container:hover .scroll-content {
     animation-play-state: paused;
