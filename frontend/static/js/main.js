@@ -106,7 +106,7 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('Missing fields container not found, skipping update');
             return;
         }
-        missingFieldsContainer.innerHTML = '<strong>需要补充的信息：</strong>' +
+        missingFieldsContainer.innerHTML = '<strong>Additional information needed: </strong>' +
             fields.map(f => `<span class="badge bg-warning text-dark me-1">${f}</span>`).join('');
         missingFieldsContainer.classList.remove('d-none');
     }
@@ -527,6 +527,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         <li>What's your budget (low, medium, high)?</li>
                         <li>How many people are traveling?</li>
                         <li>Are you traveling with children, pets, or have any special requirements?</li>
+                        <li>What type of activities do you enjoy (e.g., adventure, relaxation, culture)?</li>
+                        <li>What's your health condition?</li>
                     </ul>
                 `, 'assistant');
             })

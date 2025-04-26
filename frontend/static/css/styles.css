@@ -101,6 +101,7 @@ body {
 }
 
 /* Itinerary styling */
+/* 放到页面左侧 */
 #itinerary-container {
     max-height: 300px;
     overflow-y: auto;

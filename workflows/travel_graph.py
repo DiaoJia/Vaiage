@@ -55,7 +55,7 @@ class TravelGraph:
         if result.get("state"):
             # Merge new state with existing state instead of overwriting
             self.state["user_info"].update(result["state"])
-            print(f"Updated user info: {self.state['user_info']}")  # Debug log
+            print(f"[DEBUG] Updated user info in _process_chat: {self.state['user_info']}")  # Debug log
         
         # Base response structure
         base = {
@@ -131,6 +131,8 @@ class TravelGraph:
         """Process strategy agent step"""
         selected_attractions = self.state["selected_attractions"]
         total_days = self.state["user_info"].get("days", 1)
+        
+        print(f"[DEBUG] User info in _process_strategy before get_ai_recommendation: {self.state['user_info']}")  # Debug log
         
         # Plan remaining time and suggest additional attractions
         strategy_result = self.strategy_agent.plan_remaining_time(

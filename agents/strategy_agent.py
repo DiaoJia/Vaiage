@@ -105,25 +105,40 @@ class StrategyAgent:
     
     def get_ai_recommendation(self, user_prefs, selected_spots, total_days):
         """Get AI recommendation about the overall trip plan"""
+        print(f"[DEBUG] Received user_prefs in get_ai_recommendation: {user_prefs}")  # Debug log
+        
         # Create prompt for the LLM
         spot_names = [spot["name"] for spot in selected_spots]
         days = total_days
+        
+        # Extract specific preferences
+        people = user_prefs.get('people', 1)
+        has_kids = user_prefs.get('kids', 'no').lower() == 'yes'
+        health_prefs = user_prefs.get('health', 'good')
+        budget = user_prefs.get('budget', 'medium')
+        hobbies = user_prefs.get('hobbies', '')
         
         prompt = f"""
         A tourist is planning a {days}-day trip with the following attractions:
         {', '.join(spot_names)}
         
-        Their preferences are:
-        - Health status: {user_prefs.get('health', 'good')}
-        - Traveling with kids: {'Yes' if user_prefs.get('kids', False) else 'No'}
-        - Budget level: {user_prefs.get('budget', 'medium')}
+        Their specific preferences are:
+        - Number of people: {user_prefs.get('people', 1)}
+        - Traveling with children: {'Yes' if has_kids else 'No'}
+        - Health/Dietary requirements: {health_prefs}
+        - Budget level: {budget}
+        - Interests/Hobbies: {hobbies}
         
-        Would you recommend renting a car for this itinerary? Why or why not?
-        Also, would you suggest any adjustments to make the trip more enjoyable?
+        Based on these EXACT preferences, please provide recommendations:
+        1. Would you recommend renting a car for this itinerary? Why or why not?
+        2. What adjustments would you suggest to make the trip more enjoyable given these specific preferences?
+        
+        IMPORTANT: Make sure your recommendations align with the traveler's actual preferences as listed above.
+        For example, if they are not traveling with children, do not suggest child-friendly activities.
         """
         
         messages = [
-            SystemMessage(content="You are a travel advisor helping with trip logistics."),
+            SystemMessage(content="You are a travel advisor helping with trip logistics. Always base your recommendations on the exact preferences provided by the traveler."),
             HumanMessage(content=prompt)
         ]
         
