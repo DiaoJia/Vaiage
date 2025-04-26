@@ -117,12 +117,17 @@ class ChatAgent:
 
             extracted_info = json.loads(llm_response.content)
 
-            filtered_info = {field: extracted_info.get(field, "") for field in self.required_fields}
+            # Only update fields that have non-empty values
+            filtered_info = {}
+            for field in self.required_fields:
+                value = extracted_info.get(field, "")
+                if value:  # Only include non-empty values
+                    filtered_info[field] = value
 
             return filtered_info 
         except Exception as e:
             print("Error parsing LLM output:", e)
-            return {field: "" for field in self.required_fields}
+            return {}  # Return empty dict instead of clearing all fields
         
 
     

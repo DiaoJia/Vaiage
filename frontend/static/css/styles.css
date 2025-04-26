@@ -101,6 +101,7 @@ body {
 }
 
 /* Itinerary styling */
+/* 放到页面左侧 */
 #itinerary-container {
     max-height: 300px;
     overflow-y: auto;
@@ -273,7 +274,7 @@ body {
     position: relative;
 }
 .scroll-content {
-    animation: auto-scroll 20s linear infinite;
+    animation: auto-scroll 10s linear infinite;
 }
 @keyframes auto-scroll {
     0% { transform: translateY(0); }
