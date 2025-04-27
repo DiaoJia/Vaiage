@@ -322,9 +322,13 @@ class TravelGraph:
                 response_message
             )
             
+            # Create a generator that yields the response message
+            def reply_generator():
+                yield AIMessage(content="Thank you for handling the car rental.")
+            
             return {
                 "next_step": "route",  # Move to route planning after rental communication
-                "response": "Thank you for handling the car rental.",
+                "stream": reply_generator(),
                 "reply": reply
             }
         else:
@@ -340,9 +344,13 @@ class TravelGraph:
             
             self.state["rental_post"] = rental_post
             
+            # Create a generator that yields the response message
+            def response_generator():
+                yield AIMessage(content="I've created a car rental request post for you.")
+            
             return {
                 "next_step": "route",  # Continue with route planning while waiting for responses
-                "response": "I've created a car rental request post for you.",
+                "stream": response_generator(),
                 "rental_post": rental_post
             }
     

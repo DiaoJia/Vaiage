@@ -145,8 +145,8 @@ class RouteAgent:
             # Add spot to current day
             spot_with_time = spot.copy()
             hours_spent = remaining_hours - spot_duration
-            start_hour = 9 + (8 - remaining_hours)  # Start at 9 AM
-            end_hour = start_hour + spot_duration
+            start_hour = int(9 + (8 - remaining_hours))  # Start at 9 AM
+            end_hour = int(start_hour + spot_duration)
             
             spot_with_time["start_time"] = f"{start_hour:02d}:00"
             spot_with_time["end_time"] = f"{end_hour:02d}:00"
@@ -173,13 +173,35 @@ class RouteAgent:
             "high": {"accommodation": 200, "food": 100, "transport": 40}
         }
         
-        budget_level = user_prefs.get("budget", "medium")
+        # Get budget level from user preferences
+        budget_value = user_prefs.get("budget", "medium")
+        
+        # Convert budget value to level
+        if isinstance(budget_value, str):
+            # Remove currency symbols and convert to numeric range
+            budget_value = budget_value.replace("$", "").replace(",", "")
+            if "–" in budget_value or "-" in budget_value:
+                # Take the lower bound of the range
+                budget_value = budget_value.split("–")[0].split("-")[0]
+            try:
+                budget_value = float(budget_value)
+                if budget_value < 1000:
+                    budget_level = "low"
+                elif budget_value < 3000:
+                    budget_level = "medium"
+                else:
+                    budget_level = "high"
+            except ValueError:
+                budget_level = "medium"
+        else:
+            budget_level = "medium"
+        
         num_people = user_prefs.get("people", 1)
         num_days = user_prefs.get("days", 1)
         
         # Calculate base costs
         daily_cost = sum(base_costs[budget_level].values())
-        base_total = daily_cost * num_days * num_people
+        base_total = daily_cost * int(num_days) * int(num_people)
         
         # Add attraction costs
         attraction_cost = 0
@@ -187,24 +209,24 @@ class RouteAgent:
             price_level = spot.get("price_level", 2)
             # Convert price level to actual cost
             cost_map = {0: 0, 1: 10, 2: 20, 3: 30, 4: 50}
-            attraction_cost += cost_map.get(price_level, 20) * num_people
+            attraction_cost += cost_map.get(price_level, 20) * int(num_people)
         
         # Calculate total
-        total_cost = base_total + attraction_cost
+        total = base_total + attraction_cost
         
         # Add car rental if needed
         if user_prefs.get("car_rental", False):
             car_cost_daily = {"low": 30, "medium": 50, "high": 80}
-            total_cost += car_cost_daily[budget_level] * num_days
+            total += car_cost_daily[budget_level] * int(num_days)
         
         # Return detailed budget
         return {
-            "total": total_cost,
-            "accommodation": base_costs[budget_level]["accommodation"] * num_days * num_people,
-            "food": base_costs[budget_level]["food"] * num_days * num_people,
-            "transport": base_costs[budget_level]["transport"] * num_days * num_people,
+            "total": total,
+            "accommodation": base_costs[budget_level]["accommodation"] * int(num_days) * int(num_people),
+            "food": base_costs[budget_level]["food"] * int(num_days) * int(num_people),
+            "transport": base_costs[budget_level]["transport"] * int(num_days) * int(num_people),
             "attractions": attraction_cost,
-            "car_rental": car_cost_daily[budget_level] * num_days if user_prefs.get("car_rental", False) else 0
+            "car_rental": car_cost_daily[budget_level] * int(num_days) if user_prefs.get("car_rental", False) else 0
         }
     
     # budget估算为什么全部放在route_agent里？是否应该强调交通成本？
