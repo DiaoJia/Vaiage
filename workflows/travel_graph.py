@@ -363,6 +363,8 @@ class TravelGraph:
             # Get all attractions (selected + additional)
             all_attractions = self.state["selected_attractions"] + self.state["additional_attractions"]
             
+            print(f"[DEBUG] All attractions: {all_attractions}")
+            
             if not all_attractions:
                 return {
                     "next_step": "complete",
@@ -372,12 +374,14 @@ class TravelGraph:
                     "optimal_route": []
                 }
             
-            # Calculate optimal route
-            optimal_route = self.route_agent.get_optimal_route(all_attractions)
-            
-            # Generate itinerary
+            # Generate itinerary first
             days = int(self.state["user_info"].get("days", 1))  # Ensure days is an integer
-            itinerary = self.route_agent.generate_itinerary(optimal_route, start_date, days)
+            itinerary = self.route_agent.generate_itinerary(all_attractions, start_date, days)
+            
+            # Extract the optimal route from the itinerary
+            optimal_route = []
+            for day in itinerary:
+                optimal_route.extend(day["spots"])
             
             # Estimate budget
             budget = self.route_agent.estimate_budget(

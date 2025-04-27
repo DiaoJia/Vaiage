@@ -12,19 +12,27 @@ class RouteAgent:
     
     def get_optimal_route(self, spots, start_point=None):
         """Calculate optimal route between selected attractions"""
+        print(f"[DEBUG] Getting optimal route for spots: {spots}")
+        
         if not spots or len(spots) <= 1:
+            print(f"[DEBUG] Not enough spots to calculate route. Returning spots as is: {spots}")
             return spots
         
         # Get distance matrix
         distance_matrix = self._get_distance_matrix(spots)
+        print(f"[DEBUG] Distance matrix calculated: {distance_matrix}")
         
         # Solve TSP (Traveling Salesman Problem)
         if len(spots) <= 5:
             # For small number of points, brute force is fine
-            return self._solve_tsp_brute_force(spots, distance_matrix)
+            route = self._solve_tsp_brute_force(spots, distance_matrix)
+            print(f"[DEBUG] Brute force TSP solution: {route}")
+            return route
         else:
             # For larger problems, use approximate method
-            return self._solve_tsp_approximate(spots, distance_matrix)
+            route = self._solve_tsp_approximate(spots, distance_matrix)
+            print(f"[DEBUG] Approximate TSP solution: {route}")
+            return route
     
     def _get_distance_matrix(self, spots):
         """Get distance matrix between all pairs of spots"""

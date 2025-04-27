@@ -276,6 +276,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     // 可以在此处添加提示或高亮，表示行程已生成
                     addChatMessage('Your itinerary and budget have been generated! Check the left panel for details.', 'assistant');
                 }
+
+                // If we have route data, draw it on the map
+                if (data.optimal_route) {
+                    drawRoute(data.optimal_route);
+                }
+
                 console.log('[DEBUG] Final state:', state);
             } else if (data.type === 'error') {
                 eventSource.close();
@@ -675,6 +681,47 @@ document.addEventListener('DOMContentLoaded', function() {
                 selectedMarkersLayer.removeLayer(layer);
             }
         });
+    }
+
+    // Add new function to draw route on map
+    function drawRoute(route) {
+        if (!map || !route || route.length < 2) return;
+        
+        // Clear any existing route
+        if (window.routeLayer) {
+            map.removeLayer(window.routeLayer);
+        }
+        
+        // Create a new layer for the route
+        window.routeLayer = L.layerGroup().addTo(map);
+        
+        // Create a polyline connecting all points
+        const points = route.map(spot => [spot.location.lat, spot.location.lng]);
+        const polyline = L.polyline(points, {
+            color: '#007bff',
+            weight: 4,
+            opacity: 0.7,
+            smoothFactor: 1
+        }).addTo(window.routeLayer);
+        
+        // Add markers for each point with numbers
+        route.forEach((spot, index) => {
+            const marker = L.marker([spot.location.lat, spot.location.lng], {
+                icon: L.divIcon({
+                    className: 'route-marker',
+                    html: `<div class="route-marker-number">${index + 1}</div>`,
+                    iconSize: [24, 24]
+                })
+            }).addTo(window.routeLayer);
+            
+            marker.bindPopup(`
+                <h3>${spot.name || 'Unknown'}</h3>
+                <p>Stop ${index + 1}</p>
+            `);
+        });
+        
+        // Fit bounds to show the entire route
+        map.fitBounds(polyline.getBounds().pad(0.1));
     }
 
     // Make functions available globally
