@@ -48,9 +48,9 @@ def index():
         session_id = os.urandom(16).hex()
         session['session_id'] = session_id
         workflows[session_id] = TravelGraph()
-        print(f"Created new session: {session_id}")  # Debug log
+        print(f"[DEBUG] Created new session: {session_id}")
     else:
-        print(f"Using existing session: {session_id}")  # Debug log
+        print(f"[DEBUG] Using existing session: {session_id}")
     
     # Load popular attractions
     try:
@@ -72,28 +72,23 @@ def process():
             session_id = os.urandom(16).hex()
             session['session_id'] = session_id
             workflows[session_id] = TravelGraph()
-            print(f"Created new session: {session_id}")  # Debug log
+            print(f"[DEBUG] Created new session: {session_id}")
         else:
-            print(f"Using existing session: {session_id}")  # Debug log
-        
+            print(f"[DEBUG] Using existing session: {session_id}")
         if session_id not in workflows:
             workflows[session_id] = TravelGraph()
-            print(f"Recreated workflow for session: {session_id}")  # Debug log
-        
+            print(f"[DEBUG] Recreated workflow for session: {session_id}")
         workflow = workflows[session_id]
-        print(f"Current state before processing: {workflow.get_current_state()}")  # Debug log
-        
+        # 只保留关键步骤信息
+        print(f"[DEBUG] Processing step: {data.get('step', 'chat')} for session: {session_id}")
         # Process the current step
         step_name = data.get('step', 'chat')
         result = workflow.process_step(step_name, **data)
-        
         # Add the current state to the result
         result['state'] = workflow.get_current_state()
-        print(f"Current state after processing: {workflow.get_current_state()}")  # Debug log
-        
         return jsonify(result)
     except Exception as e:
-        print(f"Error in process route: {str(e)}")
+        print(f"[ERROR] in process route: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/attractions/<city>')
@@ -129,49 +124,38 @@ def stream():
         session_id = os.urandom(16).hex()
         session['session_id'] = session_id
         workflows[session_id] = TravelGraph()
-        print(f"Created new session: {session_id}")  # Debug log
+        print(f"[DEBUG] Created new session: {session_id}")
     else:
-        print(f"Using existing session: {session_id}")  # Debug log
-    
+        print(f"[DEBUG] Using existing session: {session_id}")
     if session_id not in workflows:
         workflows[session_id] = TravelGraph()
-        print(f"Recreated workflow for session: {session_id}")  # Debug log
-    
+        print(f"[DEBUG] Recreated workflow for session: {session_id}")
     workflow = workflows[session_id]
-    print(f"Current state before stream processing: {workflow.get_current_state()}")  # Debug log
-    
+    # 只保留关键步骤信息
+    print(f"[DEBUG] Streaming step for session: {session_id}")
     # Get parameters from request
     step_name = request.args.get('step', 'chat')
     user_input = request.args.get('user_input', '')
     selected_attraction_ids = request.args.get('selected_attraction_ids')
-    
-    # Parse selected_attraction_ids if present
     if selected_attraction_ids:
         try:
             selected_attraction_ids = json.loads(selected_attraction_ids)
         except json.JSONDecodeError:
             selected_attraction_ids = None
-    
     def generate():
         try:
-            # Get current state
-            current_state = workflow.get_current_state()
-            print(f"Current state in stream: {current_state}")  # Debug log
-            
             # Process the step
             result = workflow.process_step(
                 step_name, 
                 user_input=user_input,
                 selected_attraction_ids=selected_attraction_ids
             )
-            
             # Handle streaming response
             if 'stream' in result and result['stream']:
                 for chunk in result['stream']:
                     if chunk.content:
-                        yield f"data: {json.dumps({'type': 'chunk', 'content': chunk.content})}\n\n"
-                        time.sleep(0.01)  # Small delay to make streaming visible
-            
+                        yield f"data: {{\"type\": \"chunk\", \"content\": {json.dumps(chunk.content)} }}\n\n"
+                        time.sleep(0.01)
             # Send completion data
             completion_data = {
                 'type': 'complete',
@@ -181,21 +165,16 @@ def stream():
                 'attractions': result.get('attractions'),
                 'map_data': result.get('map_data'),
                 'itinerary': result.get('itinerary'),
-                'budget': result.get('budget')
+                'budget': result.get('budget'),
+                'response': result.get('response')
             }
-            
-            # If we're in strategy step and recommendations were already generated,
-            # force move to the next step
-            if step_name == 'strategy' and current_state.get('ai_recommendation_generated', False):
-                completion_data['next_step'] = 'communication' if current_state.get('should_rent_car', False) else 'route'
-                print(f"Forcing next step to: {completion_data['next_step']}")  # Debug log
-            
+            if step_name == 'strategy' and workflow.get_current_state().get('ai_recommendation_generated', False):
+                completion_data['next_step'] = 'communication' if workflow.get_current_state().get('should_rent_car', False) else 'route'
+                print(f"[DEBUG] Forcing next step to: {completion_data['next_step']}")
             yield f"data: {json.dumps(completion_data)}\n\n"
-            
         except Exception as e:
-            print(f"Error in stream route: {str(e)}")
-            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
-    
+            print(f"[ERROR] in stream route: {str(e)}")
+            yield f"data: {{\"type\": \"error\", \"error\": {json.dumps(str(e))} }}\n\n"
     return Response(generate(), mimetype='text/event-stream')
 
 if __name__ == '__main__':
