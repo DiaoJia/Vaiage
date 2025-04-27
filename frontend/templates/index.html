@@ -9,6 +9,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <!-- Leaflet for maps -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Marked for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         #map {
             height: 400px;
@@ -18,6 +20,39 @@
         .leaflet-container {
             height: 100%;
             width: 100%;
+        }
+        /* Markdown styles */
+        .message-content {
+            line-height: 1.6;
+        }
+        .message-content h1, .message-content h2, .message-content h3 {
+            margin-top: 1em;
+            margin-bottom: 0.5em;
+        }
+        .message-content p {
+            margin-bottom: 1em;
+        }
+        .message-content ul, .message-content ol {
+            margin-bottom: 1em;
+            padding-left: 2em;
+        }
+        .message-content code {
+            background-color: #f8f9fa;
+            padding: 0.2em 0.4em;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        .message-content pre {
+            background-color: #f8f9fa;
+            padding: 1em;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        .message-content blockquote {
+            border-left: 4px solid #dee2e6;
+            padding-left: 1em;
+            margin-left: 0;
+            color: #6c757d;
         }
     </style>
 </head>

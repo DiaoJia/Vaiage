@@ -161,7 +161,9 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const messageContent = document.createElement('div');
         messageContent.className = 'message-content';
-        messageContent.innerHTML = message;
+        
+        // Use marked to render Markdown content
+        messageContent.innerHTML = marked.parse(message);
         
         messageDiv.appendChild(messageContent);
         chatContainer.appendChild(messageDiv);
@@ -216,7 +218,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             if (data.type === 'chunk') {
                 fullResponse += data.content;
-                messageContent.innerHTML = fullResponse;
+                messageContent.innerHTML = marked.parse(fullResponse);
                 chatContainer.scrollTop = chatContainer.scrollHeight;
             } else if (data.type === 'complete') {
                 eventSource.close();
