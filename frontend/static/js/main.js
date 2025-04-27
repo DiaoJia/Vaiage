@@ -126,7 +126,10 @@ document.addEventListener('DOMContentLoaded', function() {
         attractions: [],
         selectedAttractions: [],
         itinerary: null,
-        budget: null
+        budget: null,
+        ai_recommendation_generated: false,
+        user_input_processed: false,
+        session_id: null
     };
 
     // Handle form submission
@@ -172,81 +175,119 @@ document.addEventListener('DOMContentLoaded', function() {
         // Show loading spinner
         loadingSpinner.classList.remove('d-none');
         
-        // Prepare request payload
-        const payload = {
+        // Create a new message container for the assistant's response
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'chat-message assistant';
+        const messageContent = document.createElement('div');
+        messageContent.className = 'message-content';
+        messageDiv.appendChild(messageContent);
+        chatContainer.appendChild(messageDiv);
+        
+        // Create EventSource for streaming
+        const params = new URLSearchParams({
             step: state.step,
-            user_input: message
-        };
+            user_input: message,
+            session_id: state.session_id || ''
+        });
         
         // Add selected attractions if in recommend step
         if (state.step === 'recommend' && state.selectedAttractions.length > 0) {
-            payload.selected_attraction_ids = state.selectedAttractions.map(a => a.id);
+            params.append('selected_attraction_ids', JSON.stringify(state.selectedAttractions.map(a => a.id)));
         }
         
-        // Send to backend
-        fetch('/api/process', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload),
-        })
-        .then(response => response.json())
-        .then(data => {
-            // Hide loading spinner
+        // Add state flags if they exist
+        if (state.ai_recommendation_generated !== undefined) {
+            params.append('ai_recommendation_generated', state.ai_recommendation_generated.toString());
+        }
+        if (state.user_input_processed !== undefined) {
+            params.append('user_input_processed', state.user_input_processed.toString());
+        }
+        
+        console.log('[DEBUG] Sending request with params:', params.toString());
+        console.log('[DEBUG] Current state:', state);
+        
+        const eventSource = new EventSource(`/api/stream?${params.toString()}`);
+        
+        let fullResponse = '';
+        
+        eventSource.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            console.log('[DEBUG] Received data:', data);
+            
+            if (data.type === 'chunk') {
+                fullResponse += data.content;
+                messageContent.innerHTML = fullResponse;
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            } else if (data.type === 'complete') {
+                eventSource.close();
+                loadingSpinner.classList.add('d-none');
+            
+                // 检查是否需要自动触发 strategy 步骤
+                const prevStep = state.step;
+                state.step = data.next_step || state.step;
+                if (data.next_step) {
+                    updateStepNav(data.next_step);
+                }
+                // 自动触发: 只有当上一步是 recommend，且新 step 是 strategy 时
+                if (prevStep === 'recommend' && state.step === 'strategy') {
+                    // 防止死循环，只自动触发一次
+                    setTimeout(() => {
+                        processUserInput('Here are my selected attractions');
+                    }, 0);
+                }
+                
+                // Store session_id if provided
+                if (data.session_id) {
+                    state.session_id = data.session_id;
+                    console.log('[DEBUG] Updated session_id:', state.session_id);
+                }
+                
+                // Display or hide missing fields
+                if (data.missing_fields && data.missing_fields.length > 0) {
+                    showMissingFields(data.missing_fields);
+                } else {
+                    hideMissingFields();
+                }
+                
+                // Update state from response
+                if (data.state) {
+                    console.log('[DEBUG] Updating state with:', data.state);
+                    if (data.state.user_info) state.userInfo = data.state.user_info;
+                    if (data.state.attractions) state.attractions = data.state.attractions;
+                    if (data.state.selected_attractions) state.selectedAttractions = data.state.selected_attractions;
+                    if (data.state.itinerary) state.itinerary = data.state.itinerary;
+                    if (data.state.budget) state.budget = data.state.budget;
+                    if (data.state.ai_recommendation_generated !== undefined) {
+                        state.ai_recommendation_generated = Boolean(data.state.ai_recommendation_generated);
+                        console.log('[DEBUG] Updated ai_recommendation_generated:', state.ai_recommendation_generated);
+                    }
+                    if (data.state.user_input_processed !== undefined) {
+                        state.user_input_processed = Boolean(data.state.user_input_processed);
+                        console.log('[DEBUG] Updated user_input_processed:', state.user_input_processed);
+                    }
+                }
+                
+                // Update UI components
+                if (data.attractions) updateAttractions(data.attractions);
+                if (data.map_data) updateMap(data.map_data);
+                if (data.itinerary) updateItinerary(data.itinerary);
+                if (data.budget) updateBudget(data.budget);
+                
+                console.log('[DEBUG] Final state:', state);
+            } else if (data.type === 'error') {
+                eventSource.close();
+                loadingSpinner.classList.add('d-none');
+                messageContent.innerHTML = 'Sorry, there was an error processing your request. Please try again.';
+                console.error('Error:', data.error);
+            }
+        };
+        
+        eventSource.onerror = function(error) {
+            console.error('EventSource failed:', error);
+            eventSource.close();
             loadingSpinner.classList.add('d-none');
-            
-            // Update state
-            state.step = data.next_step || state.step;
-            // Update step navigation
-            if (data.next_step) {
-                updateStepNav(data.next_step);
-            }
-            // Display or hide missing fields
-            if (data.missing_fields && data.missing_fields.length > 0) {
-                showMissingFields(data.missing_fields);
-            } else {
-                hideMissingFields();
-            }
-            
-            if (data.state) {
-                if (data.state.user_info) state.userInfo = data.state.user_info;
-                if (data.state.attractions) state.attractions = data.state.attractions;
-                if (data.state.selected_attractions) state.selectedAttractions = data.state.selected_attractions;
-                if (data.state.itinerary) state.itinerary = data.state.itinerary;
-                if (data.state.budget) state.budget = data.state.budget;
-            }
-            
-            // Add response to chat
-            if (data.response) {
-                addChatMessage(data.response, 'assistant');
-            }
-            
-            // Update attractions if provided
-            if (data.attractions) {
-                updateAttractions(data.attractions);
-            }
-            
-            // Update map if map data provided
-            if (data.map_data) {
-                updateMap(data.map_data);
-            }
-            
-            // Update itinerary if provided
-            if (data.itinerary) {
-                updateItinerary(data.itinerary);
-            }
-            
-            // Update budget if provided
-            if (data.budget) {
-                updateBudget(data.budget);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            loadingSpinner.classList.add('d-none');
-            addChatMessage('Sorry, there was an error processing your request. Please try again.', 'assistant');
-        });
+            messageContent.innerHTML = 'Sorry, there was an error processing your request. Please try again.';
+        };
     }
     
     // Update map with new data
@@ -357,19 +398,22 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
         
-        // Add confirm button
-        const confirmBtn = document.createElement('button');
-        confirmBtn.className = 'btn btn-primary w-100';
-        confirmBtn.textContent = 'Confirm Selection';
-        confirmBtn.addEventListener('click', function() {
-            if (state.selectedAttractions.length > 0) {
-                processUserInput('Here are my selected attractions');
-            } else {
-                addChatMessage('Please select at least one attraction.', 'assistant');
-            }
-        });
-        
-        recommendationsContainer.appendChild(confirmBtn);
+        // Only add confirm button if we're not already in the strategy step
+        if (state.step !== 'strategy') {
+            // Add confirm button
+            const confirmBtn = document.createElement('button');
+            confirmBtn.className = 'btn btn-primary w-100';
+            confirmBtn.textContent = 'Confirm Selection';
+            confirmBtn.addEventListener('click', function() {
+                if (state.selectedAttractions.length > 0) {
+                    processUserInput('Here are my selected attractions');
+                } else {
+                    addChatMessage('Please select at least one attraction.', 'assistant');
+                }
+            });
+            
+            recommendationsContainer.appendChild(confirmBtn);
+        }
     }
     
     // Add marker to map
@@ -515,7 +559,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     attractions: [],
                     selectedAttractions: [],
                     itinerary: null,
-                    budget: null
+                    budget: null,
+                    ai_recommendation_generated: false,
+                    user_input_processed: false,
+                    session_id: null
                 };
                 
                 // Add initial welcome message

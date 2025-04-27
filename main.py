@@ -1,10 +1,11 @@
-from flask import Flask, render_template, request, jsonify, session, send_from_directory, send_file
+from flask import Flask, render_template, request, jsonify, session, send_from_directory, send_file, Response
 from flask_session import Session
 import os
 import json
 from dotenv import load_dotenv
 from workflows.travel_graph import TravelGraph
 import requests
+import time
 
 # Load environment variables
 load_dotenv()
@@ -119,6 +120,83 @@ def reset_session():
     
     session.clear()
     return jsonify({"status": "session reset"})
+
+@app.route('/api/stream')
+def stream():
+    """Handle streaming responses"""
+    session_id = session.get('session_id')
+    if not session_id:
+        session_id = os.urandom(16).hex()
+        session['session_id'] = session_id
+        workflows[session_id] = TravelGraph()
+        print(f"Created new session: {session_id}")  # Debug log
+    else:
+        print(f"Using existing session: {session_id}")  # Debug log
+    
+    if session_id not in workflows:
+        workflows[session_id] = TravelGraph()
+        print(f"Recreated workflow for session: {session_id}")  # Debug log
+    
+    workflow = workflows[session_id]
+    print(f"Current state before stream processing: {workflow.get_current_state()}")  # Debug log
+    
+    # Get parameters from request
+    step_name = request.args.get('step', 'chat')
+    user_input = request.args.get('user_input', '')
+    selected_attraction_ids = request.args.get('selected_attraction_ids')
+    
+    # Parse selected_attraction_ids if present
+    if selected_attraction_ids:
+        try:
+            selected_attraction_ids = json.loads(selected_attraction_ids)
+        except json.JSONDecodeError:
+            selected_attraction_ids = None
+    
+    def generate():
+        try:
+            # Get current state
+            current_state = workflow.get_current_state()
+            print(f"Current state in stream: {current_state}")  # Debug log
+            
+            # Process the step
+            result = workflow.process_step(
+                step_name, 
+                user_input=user_input,
+                selected_attraction_ids=selected_attraction_ids
+            )
+            
+            # Handle streaming response
+            if 'stream' in result and result['stream']:
+                for chunk in result['stream']:
+                    if chunk.content:
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': chunk.content})}\n\n"
+                        time.sleep(0.01)  # Small delay to make streaming visible
+            
+            # Send completion data
+            completion_data = {
+                'type': 'complete',
+                'next_step': result.get('next_step'),
+                'missing_fields': result.get('missing_fields', []),
+                'state': result.get('state'),
+                'attractions': result.get('attractions'),
+                'map_data': result.get('map_data'),
+                'itinerary': result.get('itinerary'),
+                'budget': result.get('budget')
+            }
+            
+            # If we're in strategy step and recommendations were already generated,
+            # force move to the next step
+            if step_name == 'strategy' and current_state.get('ai_recommendation_generated', False):
+                completion_data['next_step'] = 'communication' if current_state.get('should_rent_car', False) else 'route'
+                print(f"Forcing next step to: {completion_data['next_step']}")  # Debug log
+            
+            yield f"data: {json.dumps(completion_data)}\n\n"
+            
+        except Exception as e:
+            print(f"Error in stream route: {str(e)}")
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+    
+    return Response(generate(), mimetype='text/event-stream')
 
 if __name__ == '__main__':
     # Create data directory if it doesn't exist
