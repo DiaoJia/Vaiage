@@ -408,6 +408,13 @@ document.addEventListener('DOMContentLoaded', function() {
             confirmBtn.textContent = 'Confirm Selection';
             confirmBtn.addEventListener('click', function() {
                 if (state.selectedAttractions.length > 0) {
+                    // Show processing message
+                    // addChatMessage('Processing your selected attractions...', 'assistant');
+                    
+                    // Update selected attractions list
+                    updateSelectedAttractionsList(state.selectedAttractions);
+                    
+                    // Process the selection
                     processUserInput('Here are my selected attractions');
                 } else {
                     addChatMessage('Please select at least one attraction.', 'assistant');
@@ -607,20 +614,41 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Update selected attractions list
-    function updateSelectedAttractionsList() {
+    function updateSelectedAttractionsList(attractions) {
+        const selectedAttractionsList = document.getElementById('selected-attractions');
         if (!selectedAttractionsList) return;
+        
         selectedAttractionsList.innerHTML = '';
-
-        selectedAttractions.forEach(attraction => {
-            const li = document.createElement('li');
-            li.innerHTML = `
-                <div class="attraction-item">
-                    <h4>${attraction.name}</h4>
-                    <p>${attraction.address}</p>
-                    <button onclick="removeAttraction('${attraction.id}')">Remove</button>
+        
+        if (!attractions || attractions.length === 0) {
+            selectedAttractionsList.innerHTML = '<p class="text-center text-muted">No attractions selected yet.</p>';
+            return;
+        }
+        
+        attractions.forEach(attraction => {
+            const card = document.createElement('div');
+            card.className = 'card mb-2';
+            
+            let priceLevel = '';
+            for (let i = 0; i < (attraction.price_level || 0); i++) {
+                priceLevel += '💰';
+            }
+            
+            let rating = attraction.rating ? `⭐ ${attraction.rating}` : '';
+            
+            card.innerHTML = `
+                <div class="card-body">
+                    <h6 class="card-title mb-1">${attraction.name}</h6>
+                    <p class="card-text mb-1">
+                        <small class="text-muted">${attraction.category || 'attraction'}</small>
+                        <small class="ms-2">${priceLevel}</small>
+                        <small class="ms-2">${rating}</small>
+                    </p>
+                    <small class="text-muted">${attraction.estimated_duration || 2} hours</small>
                 </div>
             `;
-            selectedAttractionsList.appendChild(li);
+            
+            selectedAttractionsList.appendChild(card);
         });
     }
 
