@@ -224,7 +224,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 eventSource.close();
                 loadingSpinner.classList.add('d-none');
             
-                // 检查是否需要自动触发 strategy 步骤
                 const prevStep = state.step;
                 state.step = data.next_step || state.step;
                 if (data.next_step) {
@@ -232,25 +231,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 // 自动触发: 只有当上一步是 recommend，且新 step 是 strategy 时
                 if (prevStep === 'recommend' && state.step === 'strategy') {
-                    // 防止死循环，只自动触发一次
                     setTimeout(() => {
                         processUserInput('Here are my selected attractions');
                     }, 0);
                 }
-                
                 // Store session_id if provided
                 if (data.session_id) {
                     state.session_id = data.session_id;
                     console.log('[DEBUG] Updated session_id:', state.session_id);
                 }
-                
                 // Display or hide missing fields
                 if (data.missing_fields && data.missing_fields.length > 0) {
                     showMissingFields(data.missing_fields);
                 } else {
                     hideMissingFields();
                 }
-                
                 // Update state from response
                 if (data.state) {
                     console.log('[DEBUG] Updating state with:', data.state);
@@ -268,13 +263,25 @@ document.addEventListener('DOMContentLoaded', function() {
                         console.log('[DEBUG] Updated user_input_processed:', state.user_input_processed);
                     }
                 }
-                
                 // Update UI components
                 if (data.attractions) updateAttractions(data.attractions);
                 if (data.map_data) updateMap(data.map_data);
                 if (data.itinerary) updateItinerary(data.itinerary);
                 if (data.budget) updateBudget(data.budget);
-                
+                if (data.response) updateConfirmation(data.response);
+
+                // 关键修改：如果进入 complete 阶段（即 route 阶段返回 next_step: 'complete'），直接渲染 itinerary 和 budget，不再发起新的请求
+                if (state.step === 'complete') {
+                    // 已经在本次响应中渲染 itinerary 和 budget，无需再发 step=complete 请求
+                    // 可以在此处添加提示或高亮，表示行程已生成
+                    addChatMessage('Your itinerary and budget have been generated! Check the left panel for details.', 'assistant');
+                }
+
+                // If we have route data, draw it on the map
+                if (data.optimal_route) {
+                    drawRoute(data.optimal_route);
+                }
+
                 console.log('[DEBUG] Final state:', state);
             } else if (data.type === 'error') {
                 eventSource.close();
@@ -517,11 +524,8 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Update budget display
     function updateBudget(budget) {
-        if (!budget) return;
-        
-        const budgetDiv = document.createElement('div');
-        budgetDiv.className = 'mt-4';
-        
+        const budgetDiv = document.getElementById('budget-container');
+        if (!budgetDiv || !budget) return;
         budgetDiv.innerHTML = `
             <h5 class="mb-3">Budget Estimate</h5>
             <div class="card">
@@ -541,8 +545,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
             </div>
         `;
-        
-        itineraryContainer.appendChild(budgetDiv);
+    }
+    
+    // Update confirmation display
+    function updateConfirmation(response) {
+        const confirmationDiv = document.getElementById('confirmation-container');
+        if (!confirmationDiv) return;
+        confirmationDiv.innerHTML = '';
+        if (!response) {
+            confirmationDiv.innerHTML = '<p class="text-center text-muted">Trip confirmation and details will appear here once generated.</p>';
+            return;
+        }
+        // 支持 markdown 格式
+        confirmationDiv.innerHTML = `<div class="message-content">${marked.parse(response)}</div>`;
     }
     
     // Reset conversation
@@ -666,6 +681,47 @@ document.addEventListener('DOMContentLoaded', function() {
                 selectedMarkersLayer.removeLayer(layer);
             }
         });
+    }
+
+    // Add new function to draw route on map
+    function drawRoute(route) {
+        if (!map || !route || route.length < 2) return;
+        
+        // Clear any existing route
+        if (window.routeLayer) {
+            map.removeLayer(window.routeLayer);
+        }
+        
+        // Create a new layer for the route
+        window.routeLayer = L.layerGroup().addTo(map);
+        
+        // Create a polyline connecting all points
+        const points = route.map(spot => [spot.location.lat, spot.location.lng]);
+        const polyline = L.polyline(points, {
+            color: '#007bff',
+            weight: 4,
+            opacity: 0.7,
+            smoothFactor: 1
+        }).addTo(window.routeLayer);
+        
+        // Add markers for each point with numbers
+        route.forEach((spot, index) => {
+            const marker = L.marker([spot.location.lat, spot.location.lng], {
+                icon: L.divIcon({
+                    className: 'route-marker',
+                    html: `<div class="route-marker-number">${index + 1}</div>`,
+                    iconSize: [24, 24]
+                })
+            }).addTo(window.routeLayer);
+            
+            marker.bindPopup(`
+                <h3>${spot.name || 'Unknown'}</h3>
+                <p>Stop ${index + 1}</p>
+            `);
+        });
+        
+        // Fit bounds to show the entire route
+        map.fitBounds(polyline.getBounds().pad(0.1));
     }
 
     // Make functions available globally
