@@ -8,33 +8,62 @@ class RecommendAgent:
         """Initialize RecommendAgent with AI model for personalized recommendations"""
         self.model = ChatOpenAI(model_name=model_name, temperature=0.7)
         
-    def recommend_core_attractions(self, user_prefs, attractions, max_attractions=5):
-        """Recommend attractions based on user preferences"""
-        # If no attractions or user preferences, return empty list
-        if not attractions or not user_prefs:
-            return []
-
-        # Create prompt for the LLM to rank attractions
-        prompt = self._create_recommendation_prompt(user_prefs, attractions)
+    def recommend_core_attractions(self, user_prefs, attractions):
+        """Recommend core attractions based on user preferences"""
+        # Extract preferences
+        budget = user_prefs.get('budget', 'medium').lower()
+        people = int(user_prefs.get('people', 1))
+        has_kids = user_prefs.get('kids', 'no').lower() == 'yes'
+        health = user_prefs.get('health', 'good').lower()
+        hobbies = user_prefs.get('hobbies', '').lower()
         
-        # Ask the LLM to rank attractions
-        messages = [
-            SystemMessage(content="You are a travel recommendation expert. Rank attractions based on user preferences."),
-            HumanMessage(content=prompt)
-        ]
+        # Filter attractions based on preferences
+        filtered_attractions = []
+        for attraction in attractions:
+            # Skip if any required field is None
+            if not all([
+                attraction.get('price_level') is not None,
+                attraction.get('estimated_duration') is not None,
+                attraction.get('category') is not None
+            ]):
+                continue
+                
+            # Budget filter
+            if budget == 'low' and attraction['price_level'] > 2:
+                continue
+            elif budget == 'medium' and attraction['price_level'] > 3:
+                continue
+            elif budget == 'high' and attraction['price_level'] > 4:
+                continue
+            
+            # Family-friendly filter
+            if has_kids and not attraction.get('family_friendly', False):
+                continue
+            
+            # Health considerations
+            if health == 'limited' and attraction.get('accessibility') == 'limited':
+                continue
+            
+            # Hobbies match
+            if hobbies:
+                category = attraction.get('category', '').lower()
+                if any(hobby in category for hobby in hobbies.split(',')):
+                    filtered_attractions.append(attraction)
+                continue
+            
+            filtered_attractions.append(attraction)
         
-        response = self.model(messages)
+        # Sort by rating and duration
+        filtered_attractions.sort(
+            key=lambda x: (
+                x.get('rating', 0) or 0,  # Handle None values
+                -(x.get('estimated_duration', 0) or 0)  # Handle None values
+            ),
+            reverse=True
+        )
         
-        # Parse the response to get ranked attractions
-        try:
-            # Try to parse JSON response
-            ranked_attractions = json.loads(response.content)
-        except json.JSONDecodeError:
-            # Fallback to simple scoring if LLM doesn't return valid JSON
-            ranked_attractions = self._score_attractions(user_prefs, attractions)
-        
-        # Return top N attractions
-        return ranked_attractions[:max_attractions]
+        # Return top recommendations
+        return filtered_attractions[:10]
     
     def _create_recommendation_prompt(self, user_prefs, attractions):
         """Create prompt for the LLM to rank attractions"""

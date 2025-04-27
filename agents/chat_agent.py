@@ -2,10 +2,12 @@ import os
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 import json
+from typing import Generator
+
 class ChatAgent:
     def __init__(self, model_name="gpt-3.5-turbo"):
         """Initialize the ChatAgent with specified model"""
-        self.model = ChatOpenAI(model_name=model_name, temperature=0.7)
+        self.model = ChatOpenAI(model_name=model_name, temperature=0.7, streaming=True)
         self.required_fields = ["city", "days", "budget", "people", "kids", "health", "hobbies"]
         self.conversation_history = []
         
@@ -16,7 +18,7 @@ class ChatAgent:
         Be friendly, conversational, and help the user plan their trip. Collect all necessary information.
         """)
         
-    def collect_info(self, user_input, state=None):
+    def collect_info(self, user_input: str, state: dict = None) -> dict:
         """Check for missing information and ask user questions to complete the required information"""
         if state is None:
             state = {}
@@ -48,47 +50,40 @@ class ChatAgent:
         """))
         
         try:
-            response = self.model(messages)
-            self.conversation_history.append(AIMessage(content=response.content))
+            response = self.model.stream(messages)
+            return {
+                "stream": response,
+                "missing_fields": [f for f in self.required_fields if not state.get(f)],
+                "complete": len([f for f in self.required_fields if not state.get(f)]) == 0,
+                "state": state.copy()
+            }
         except Exception as e:
             print(f"Error getting AI response: {e}")
-            response = AIMessage(content="抱歉，我遇到了一些问题。请再试一次。")
-        
-        missing = [f for f in self.required_fields if not state.get(f)]
-        if missing:
             return {
-                "response": response.content,
-                "missing_fields": missing,
+                "stream": None,
+                "missing_fields": [f for f in self.required_fields if not state.get(f)],
                 "complete": False,
-                "state": state.copy()  # Return a copy of the state
-            }
-        else:
-            return {
-                "response": response.content,
-                "missing_fields": [],
-                "complete": True,
-                "state": state.copy()  # Return a copy of the state
+                "state": state.copy(),
+                "error": str(e)
             }
     
-    def interact_with_user(self, message, state=None):
-        """Process user message and generate a response"""
+    def interact_with_user(self, message: str, state: dict = None) -> Generator:
+        """Process user message and generate a streaming response"""
         if state is None:
             state = {}
             
         # Add user message to conversation
         self.conversation_history.append(HumanMessage(content=message))
         
-        # Generate response based on the conversation history
-        response = self.model(self.conversation_history)
-        
-        # Add assistant response to conversation history
-        self.conversation_history.append(AIMessage(content=response.content))
-        
-        return response.content
+        # Generate streaming response based on the conversation history
+        try:
+            return self.model.stream(self.conversation_history)
+        except Exception as e:
+            print(f"Error in interact_with_user: {e}")
+            return None
     
-    def extract_info_from_message(self, message):
+    def extract_info_from_message(self, message: str) -> dict:
         """Use LLM to extract structured travel information from user message"""
-        
         system_prompt = f"""Extract the following travel information from the user's message and return JSON.
         Carefully analyze the message to understand both explicit and implicit information.
         
@@ -113,8 +108,6 @@ class ChatAgent:
 
         try:
             llm_response = self.model.invoke(messages)
-            #print("LLM response:", llm_response.content)
-
             extracted_info = json.loads(llm_response.content)
 
             # Only update fields that have non-empty values
@@ -127,7 +120,7 @@ class ChatAgent:
             return filtered_info 
         except Exception as e:
             print("Error parsing LLM output:", e)
-            return {}  # Return empty dict instead of clearing all fields
+            return {}
         
 
     

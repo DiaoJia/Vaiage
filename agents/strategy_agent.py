@@ -2,11 +2,12 @@ import math
 import random
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from typing import Generator
 
 class StrategyAgent:
     def __init__(self, model_name="gpt-3.5-turbo"):
         """Initialize StrategyAgent with AI model for planning"""
-        self.model = ChatOpenAI(model_name=model_name, temperature=0.7)
+        self.model = ChatOpenAI(model_name=model_name, temperature=0.7, streaming=True)
     
     def plan_remaining_time(self, selected_spots, total_days, all_attractions):
         """Calculate remaining time and suggest additional attractions"""
@@ -103,7 +104,7 @@ class StrategyAgent:
         
         return False
     
-    def get_ai_recommendation(self, user_prefs, selected_spots, total_days):
+    def get_ai_recommendation(self, user_prefs, selected_spots, total_days) -> Generator:
         """Get AI recommendation about the overall trip plan"""
         print(f"[DEBUG] Received user_prefs in get_ai_recommendation: {user_prefs}")  # Debug log
         
@@ -142,6 +143,8 @@ class StrategyAgent:
             HumanMessage(content=prompt)
         ]
         
-        response = self.model(messages)
-        
-        return response.content
+        try:
+            return self.model.stream(messages)
+        except Exception as e:
+            print(f"Error in get_ai_recommendation: {e}")
+            return None

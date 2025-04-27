@@ -8,31 +8,49 @@ class CommunicationAgent:
     
     def post_car_rental_request(self, location, duration, user_prefs):
         """Generate car rental request post"""
+        # Convert duration to integer if it's a string
+        duration = int(duration) if isinstance(duration, str) else duration
+        
+        # Get user preferences with defaults and proper type conversion
+        num_people = int(user_prefs.get('people', 1)) if isinstance(user_prefs.get('people'), str) else user_prefs.get('people', 1)
+        has_kids = user_prefs.get('kids', False)
+        if isinstance(has_kids, str):
+            has_kids = has_kids.lower() == 'yes' or has_kids.lower() == 'true'
+        budget_level = user_prefs.get('budget', 'medium')
+        
+        # Format the prompt with consistent information
         prompt = f"""
         Generate a car rental request post for the following trip:
         
         Location: {location}
         Duration: {duration} days
-        Number of people: {user_prefs.get('people', 1)}
-        Kids: {'Yes' if user_prefs.get('kids', False) else 'No'}
-        Budget level: {user_prefs.get('budget', 'medium')}
+        Number of people: {num_people}
+        Kids: {'Yes' if has_kids else 'No'}
+        Budget level: {budget_level}
         
         The post should be polite, clear, and include all necessary information.
-        Include any special requirements such as child seats if needed.
+        {f'Include a request for child seats if available.' if has_kids else ''}
+        Make sure the information about kids and budget matches exactly with the provided details.
         """
         
         messages = [
-            SystemMessage(content="You are a helpful assistant creating a car rental request post."),
+            SystemMessage(content="You are a helpful assistant creating a car rental request post. Ensure all information is accurate and matches the provided details exactly."),
             HumanMessage(content=prompt)
         ]
         
         response = self.model(messages)
         
+        # Return structured data with consistent information
         return {
             "post_content": response.content,
             "location": location,
             "duration": duration,
-            "status": "pending"
+            "status": "pending",
+            "user_prefs": {
+                "num_people": num_people,
+                "has_kids": has_kids,
+                "budget_level": budget_level
+            }
         }
     
     def handle_rental_response(self, rental_post, response_message):
