@@ -1,18 +1,37 @@
 import os
-import googlemaps
 import sys
-import pathlib
+import googlemaps
+from datetime import datetime
 
-# Add the project root to the Python path
-sys.path.append(str(pathlib.Path(__file__).parent.parent))
+# Add the parent directory to sys.path to allow imports from services
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.maps_api import POIApi
 from services.weather_api import WeatherService
 from services.car_rental_api import CarRentalService
-import unittest
-from datetime import datetime
-import json
 
+
+def format_duration(seconds):
+    if seconds is None:
+        return "N/A"
+    minutes, sec = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    duration_str = ""
+    if hours > 0:
+        duration_str += f"{hours} hour{'s' if hours > 1 else ''} "
+    if minutes > 0:
+        duration_str += f"{minutes} min{'s' if minutes > 1 else ''}"
+    if not duration_str: # Handle cases less than a minute
+         duration_str = f"{sec} sec{'s' if sec > 1 else ''}"
+    return duration_str.strip()
+
+# --- Helper function for formatting distance ---
+def format_distance(meters):
+    if meters is None:
+        return "N/A"
+    km = meters / 1000.0
+    miles = meters / 1609.34
+    return f"{km:.1f} km / {miles:.1f} miles"
 
 class InformationAgent:
     """
@@ -54,7 +73,7 @@ class InformationAgent:
         # Weather service
         self.weather_service = WeatherService()
         # Car rental service
-        self.car_rental_service = CarRentalService(api_key=car_api_key)
+        self.car_rental_service = CarRentalService(rapidapi_key=car_api_key)
 
     def city2geocode(self, city: str):
         """
@@ -182,28 +201,22 @@ class InformationAgent:
 
     def plan_routes(self, origin: str, destination: str):
         """
-        Route Planning:
-        
+        Route Planning (Simple A to B for multiple modes).
+
         Input:
-            - origin: Starting point (address or coordinates)
-            - destination: End point (address or coordinates)
-            
-        Output:
-            List of routes for different travel modes (driving, walking, bicycling, transit),
-            including time, distance, and cost (if available)
-            
-        Example:
+            - origin: Starting point (address, place name, or lat/lng tuple/dict)
+            - destination: End point (address, place name, or lat/lng tuple/dict)
+
+        Output Format:
+            List[Dict[str, Any]] or empty list. Each dict represents a travel mode:
             [
                 {
-                    "mode": "driving",
-                    "distance": "10.2 miles",
-                    "duration": "25 mins"
-                },
-                {
-                    "mode": "transit",
-                    "distance": "10.5 miles",
-                    "duration": "45 mins",
-                    "fare": "$2.75"
+                    'mode': str,                # e.g., 'driving', 'transit'
+                    'distance': str,            # Formatted distance text (e.g., "10.2 miles")
+                    'duration': str,            # Formatted duration text (e.g., "25 mins")
+                    'distance_meters': int,     # Raw distance in meters
+                    'duration_seconds': int,    # Raw duration in seconds
+                    'fare': str | None          # Estimated fare text (mostly for transit)
                 },
                 ...
             ]
@@ -211,22 +224,174 @@ class InformationAgent:
         modes = ['driving', 'walking', 'bicycling', 'transit']
         routes = []
         for mode in modes:
-            directions = self.gmaps.directions(
-                origin, destination, mode=mode, language='en'
-            )
-            if not directions:
-                continue
-            leg = directions[0]['legs'][0]
-            info = {
-                'mode': mode,
-                'distance': leg['distance']['text'],
-                'duration': leg['duration']['text'],
-            }
-            # If fare information is available
-            if 'fare' in directions[0]:
-                info['fare'] = directions[0]['fare'].get('text')
-            routes.append(info)
+            try:
+                # Keep 'en' for consistent address resolution and international compatibility
+                directions = self.gmaps.directions(
+                    origin, destination, mode=mode, language='en'
+                )
+                if not directions:
+                    continue
+
+                # Ensure legs exist and are not empty
+                if not directions[0].get('legs'):
+                    print(f"Warning: Route for mode '{mode}' from '{origin}' to '{destination}' lacks 'legs' data.")
+                    continue
+                leg = directions[0]['legs'][0]
+
+                # Ensure distance and duration exist in the leg
+                if 'distance' not in leg or 'duration' not in leg:
+                     print(f"Warning: Leg for mode '{mode}' from '{origin}' to '{destination}' lacks distance or duration data.")
+                     continue
+
+                info = {
+                    'mode': mode,
+                    'distance': leg['distance']['text'],
+                    'duration': leg['duration']['text'],
+                    'distance_meters': leg['distance']['value'], # Raw distance in meters
+                    'duration_seconds': leg['duration']['value']  # Raw duration in seconds
+                }
+                # Add fare info if available
+                if 'fare' in directions[0]:
+                    info['fare'] = directions[0]['fare'].get('text')
+                routes.append(info)
+            except googlemaps.exceptions.ApiError as e:
+                 print(f"Error planning route for mode '{mode}' from '{origin}' to '{destination}': {e}")
+            except IndexError:
+                 print(f"Index error processing route result for mode '{mode}' from '{origin}' to '{destination}' (likely missing 'legs').")
+            except KeyError as e:
+                 print(f"Key error processing route result for mode '{mode}' from '{origin}' to '{destination}': {e} (likely missing 'distance' or 'duration').")
+            except Exception as e:
+                 print(f"An unexpected error occurred during route planning for mode '{mode}': {e}")
         return routes
+
+    def plan_with_waypoints(self, origin: str, destination: str, waypoints: list,
+                                            mode: str = 'driving', departure_time: datetime = None):
+        """
+        Plans an optimized route visiting a list of waypoints between an origin and destination.
+        Uses the Google Maps Directions API with waypoint optimization (`optimize_waypoints=True`).
+
+        Input:
+            - origin: Starting point (address, place name, or lat/lng tuple/dict)
+            - destination: End point (address, place name, or lat/lng tuple/dict)
+            - waypoints: List of intermediate points (list of strings, lat/lng tuples/dicts)
+            - mode: Travel mode (default: 'driving'). Optimization works best for 'driving'.
+            - departure_time: Optional datetime object (default: now) for traffic estimation.
+
+        Output Format:
+            Dict[str, Any] or None if no route is found.
+            {
+                'path_sequence': List[str],         # List of addresses in optimized order (Origin, WptX, WptY,..., Dest)
+                'waypoint_original_indices': List[int], # Order original waypoints were visited (0-based index)
+                'total_duration_text': str,         # Formatted total duration (e.g., "2 hours 30 mins")
+                'total_duration_seconds': int,      # Raw total duration in seconds
+                'total_duration_in_traffic_text': str | None, # Formatted duration with traffic (if available)
+                'total_duration_in_traffic_seconds': int | None, # Raw duration with traffic (if available)
+                'total_distance_text': str,         # Formatted total distance (e.g., "150.5 km / 93.5 miles")
+                'total_distance_meters': int,       # Raw total distance in meters
+                'fare': str | None                  # Estimated fare text (rare for driving)
+            }
+        """
+        # Handle empty waypoints list by falling back to simple A-B route planning
+        if not waypoints:
+            print("Warning: No waypoints provided. Calling standard plan_routes for A-B.")
+            simple_route_options = self.plan_routes(origin, destination)
+            # Find the driving route from the simple options
+            driving_route = next((r for r in simple_route_options if r['mode'] == 'driving'), None)
+            if driving_route:
+                 # Addresses from API are resolved; use original input if unavailable in fallback
+                 start_addr = origin if isinstance(origin, str) else f"Coord: {origin}"
+                 end_addr = destination if isinstance(destination, str) else f"Coord: {destination}"
+                 return {
+                    'path_sequence': [start_addr, end_addr], # Simplified path
+                    'waypoint_original_indices': [],
+                    'total_duration_text': driving_route['duration'],
+                    'total_duration_seconds': driving_route['duration_seconds'],
+                    'total_duration_in_traffic_text': None, # Not available from simple plan_routes call here
+                    'total_duration_in_traffic_seconds': None,
+                    'total_distance_text': driving_route['distance'],
+                    'total_distance_meters': driving_route['distance_meters'],
+                    'fare': driving_route.get('fare')
+                 }
+            else:
+                print(f"Could not find a driving route from {origin} to {destination} in fallback.")
+                return None
+
+        # Set departure time to now if not specified
+        if departure_time is None:
+            departure_time = datetime.now()
+
+        print(f"Planning optimized route: {origin} -> Waypoints -> {destination} for mode '{mode}'")
+
+        try:
+            # Call Google Maps Directions API
+            # language='en' affects instruction text, addresses usually resolve globally
+            directions_result = self.gmaps.directions(
+                origin,
+                destination,
+                waypoints=waypoints,
+                optimize_waypoints=True, # <<< Key parameter for optimization
+                mode=mode,
+                departure_time=departure_time,
+                language='en'
+            )
+
+            # Check if API returned a valid result
+            if not directions_result:
+                print("No route found for the given points and mode.")
+                return None
+
+            # Get the first recommended route
+            route = directions_result[0]
+            # 'legs' are the segments between points (origin->wpt1, wpt1->wpt2, ..., wptN->dest)
+            legs = route['legs']
+
+            # Calculate total duration and distance by summing up values from each leg
+            total_duration_sec = sum(leg['duration']['value'] for leg in legs)
+            total_distance_m = sum(leg['distance']['value'] for leg in legs)
+
+            # Calculate duration with traffic if available for all legs
+            total_duration_traffic_sec = None
+            if all('duration_in_traffic' in leg for leg in legs):
+                 total_duration_traffic_sec = sum(leg['duration_in_traffic']['value'] for leg in legs)
+
+            # Reconstruct the path sequence using resolved addresses from the API response
+            # Start address is from the first leg; end addresses are from each leg
+            path_sequence = [legs[0]['start_address']] + [leg['end_address'] for leg in legs]
+
+            # Get the optimized order of the *original* waypoints list (0-based indices)
+            optimized_indices = route.get('waypoint_order', [])
+
+            # Prepare the result dictionary
+            result = {
+                'path_sequence': path_sequence,
+                'waypoint_original_indices': optimized_indices,
+                'total_duration_text': format_duration(total_duration_sec),
+                'total_duration_seconds': total_duration_sec,
+                'total_distance_text': format_distance(total_distance_m),
+                'total_distance_meters': total_distance_m,
+                'fare': route.get('fare', {}).get('text') # Extract fare text if present
+            }
+
+            # Add traffic duration details if calculated
+            if total_duration_traffic_sec is not None:
+                result['total_duration_in_traffic_text'] = format_duration(total_duration_traffic_sec)
+                result['total_duration_in_traffic_seconds'] = total_duration_traffic_sec
+            else:
+                 result['total_duration_in_traffic_text'] = None
+                 result['total_duration_in_traffic_seconds'] = None
+
+            return result
+
+        # Handle potential API errors or other exceptions
+        except googlemaps.exceptions.ApiError as e:
+            print(f"Error planning optimized route: {e}")
+            return None
+        except Exception as e:
+            print(f"An unexpected error occurred during optimized route planning: {e}")
+            # Optionally re-raise or log the full traceback for debugging
+            # import traceback
+            # traceback.print_exc()
+            return None
 
     def get_weather(self, lat: float, lng: float, start_date: str, duration: int):
         """
@@ -258,7 +423,8 @@ class InformationAgent:
         return self.weather_service.get_weather(lat, lng, start_date, duration)
 
     def search_car_rentals(self, location: str, start_date: str, end_date: str,
-                           min_price: float = None, max_price: float = None, top_n: int = 5):
+                           driver_age: int = 30, min_price: float = None, 
+                           max_price: float = None, top_n: int = 5):
         """
         Car Rental Search:
         
@@ -266,6 +432,7 @@ class InformationAgent:
             - location: Location
             - start_date: Pickup date
             - end_date: Return date
+            - driver_age: Driver's age (default: 30)
             - min_price: Minimum price (optional)
             - max_price: Maximum price (optional)
             - top_n: Number of results to return (default: 5)
@@ -276,28 +443,55 @@ class InformationAgent:
         Example:
             [
                 {
-                    "car_type": "Economy",
-                    "model": "Toyota Corolla or similar",
-                    "total_price": 175.50,
-                    "daily_rate": 35.10,
-                    "pickup_location": "SFO Airport",
-                    "company": "Hertz",
-                    "booking_link": "https://example.com/booking/123"
+                    "car_model": "Mitsubishi Mirage",
+                    "car_group": "Economy",
+                    "price": 332.29,
+                    "currency": "USD",
+                    "pickup_location_name": "Los Angeles International Airport",
+                    "supplier_name": "Enterprise",
+                    "image_url": "https://cdn.rcstatic.com/images/car_images/web/mitsubishi/mirage_lrg.png"
                 },
                 ...
             ]
         """
-        result = self.car_rental_service.search_available_cars(
-            location=location,
-            start_date=start_date,
-            end_date=end_date
+        # Get location coordinates
+        location_data = self.city2geocode(location)
+        if not location_data:
+            return []
+        
+        # Parse dates
+        pickup_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
+        dropoff_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
+        
+        # Format dates and times for API
+        pickup_date = pickup_date_obj.strftime("%Y-%m-%d")
+        pickup_time = "10:00:00"  # Default pickup time
+        dropoff_date = dropoff_date_obj.strftime("%Y-%m-%d")
+        dropoff_time = "10:00:00"  # Default dropoff time
+        
+        # Call the car rental service
+        cars = self.car_rental_service.find_available_cars(
+            pickup_lat=location_data['lat'],
+            pickup_lon=location_data['lng'],
+            pickup_date=pickup_date,
+            pickup_time=pickup_time,
+            dropoff_lat=location_data['lat'],
+            dropoff_lon=location_data['lng'],
+            dropoff_date=dropoff_date,
+            dropoff_time=dropoff_time,
+            currency_code="USD",
+            driver_age=driver_age,
+            pickup_city=location,
+            dropoff_city=location,
+            pickup_loc_name=location
         )
-        cars = result.get('available_cars', [])
-        # Price filtering
-        if min_price is not None:
-            cars = [c for c in cars if c.get('total_price', 0) >= min_price]
-        if max_price is not None:
-            cars = [c for c in cars if c.get('total_price', 0) <= max_price]
-        # Sort by total price
-        cars.sort(key=lambda x: x.get('total_price', 0))
-        return cars[:top_n]
+        
+        # Filter by price if needed
+        if cars and min_price is not None:
+            cars = [c for c in cars if c.get('price', 0) >= min_price]
+        if cars and max_price is not None:
+            cars = [c for c in cars if c.get('price', 0) <= max_price]
+            
+        # Return top N results
+        return cars[:top_n] if cars else []
+

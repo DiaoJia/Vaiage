@@ -1,315 +1,144 @@
-import os
 import requests
 import json
+import os
 from datetime import datetime, timedelta
+from urllib.parse import quote # For URL encoding location names
+from requests.models import PreparedRequest # For safely building URLs
 
 class CarRentalService:
-    def __init__(self, api_key=None):
-        """Initialize the car rental service with API key"""
-        self.api_key = api_key or os.environ.get("CAR_RENTAL_API_KEY")
-        self.base_url = "https://partners.api.skyscanner.net/apiservices/v1/carhire/live"
-        self.cache_file = "data/car_rental_cache.json"
-        self.cache = self._load_cache()
-        self.session_tokens = {}
-    
-    def _load_cache(self):
-        """Load car rental cache from file"""
-        try:
-            with open(self.cache_file, 'r') as f:
-                return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return {}
-    
-    def _save_cache(self):
-        """Save car rental cache to file"""
-        os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
-        with open(self.cache_file, 'w') as f:
-            json.dump(self.cache, f)
-    
-    def _cache_key(self, location, start_date, end_date, vehicle_type=None):
-        """Generate a cache key for car rental search"""
-        vehicle_str = f"_{vehicle_type}" if vehicle_type else ""
-        return f"{location.lower()}_{start_date}_{end_date}{vehicle_str}"
-    
-    def search_available_cars(self, location, start_date, end_date, vehicle_type=None, driver_age=30, user_ip=None, drop_off_location=None):
-        """Search for available cars at a location and date range"""
-        # Check cache first
-        cache_key = self._cache_key(location, start_date, end_date, vehicle_type)
-        if cache_key in self.cache:
-            cached_data = self.cache[cache_key]
-            # Check if cache is still valid (less than 1 hour old)
-            if datetime.now().timestamp() - cached_data["timestamp"] < 3600:
-                return cached_data["data"]
-        
-        # Make API call to car rental service
-        try:
-            # Create search request
-            create_url = f"{self.base_url}/search/create"
-            
-            # Prepare request payload
-            payload = {
-                "market": "US",  # Default market
-                "locale": "en-US",
-                "currency": "USD",
-                "pickUpDate": start_date,
-                "dropOffDate": end_date,
-                "pickUpLocation": location,
-                "driverAge": driver_age
-            }
-            
-            # Add optional parameters if provided
-            if drop_off_location:
-                payload["dropOffLocation"] = drop_off_location
-            
-            if user_ip:
-                payload["userIp"] = user_ip
-                
-            # Add vehicle type as included agent if specified
-            if vehicle_type:
-                payload["includedAgentIds"] = [vehicle_type]
-            
-            headers = {
-                "Content-Type": "application/json",
-                "api-key": self.api_key
-            }
-            
-            # Make the create request
-            create_response = requests.post(create_url, json=payload, headers=headers)
-            create_response.raise_for_status()
-            create_result = create_response.json()
-            
-            # Get session token for polling
-            session_token = create_result.get("sessionToken")
-            if not session_token:
-                raise Exception("No session token received from API")
-            
-            # Store session token with timestamp
-            self.session_tokens[cache_key] = {
-                "token": session_token,
-                "timestamp": datetime.now().timestamp()
-            }
-            
-            # Poll for results
-            poll_url = f"{self.base_url}/search/poll/{session_token}"
-            
-            # Poll until status is completed or timeout
-            max_attempts = 5
-            attempts = 0
-            poll_result = None
-            
-            while attempts < max_attempts:
-                poll_response = requests.post(poll_url, headers=headers)
-                poll_response.raise_for_status()
-                poll_result = poll_response.json()
-                
-                if poll_result.get("status") == "completed":
-                    break
-                
-                # Wait before polling again
-                attempts += 1
-                if attempts < max_attempts:
-                    import time
-                    time.sleep(2)
-            
-            # Process the results into our standard format
-            if poll_result:
-                result = self._process_api_results(poll_result, location, start_date, end_date)
-            else:
-                raise Exception("Polling failed to complete")
-            
-            # Cache the result
-            self.cache[cache_key] = {
-                "data": result,
-                "timestamp": datetime.now().timestamp()
-            }
-            self._save_cache()
-            
-            return result
-            
-        except Exception as e:
-            print(f"Error fetching car rental data: {e}")
-            raise
-    
-    def _process_api_results(self, api_result, location, start_date, end_date):
-        """Process API results into our standard format"""
-        available_cars = []
-        
-        quotes = api_result.get("quotes", [])
-        agents = api_result.get("agents", {})
-        vendors = api_result.get("vendors", {})
-        
-        for quote in quotes:
-            vendor_id = quote.get("vendorId")
-            agent_id = quote.get("agentId")
-            
-            vendor_info = vendors.get(vendor_id, {})
-            agent_info = agents.get(agent_id, {})
-            
-            car_type = quote.get("carGroupInfo", {}).get("category", "standard").lower()
-            
-            car = {
-                "id": quote.get("quoteId", ""),
-                "vehicle_type": car_type,
-                "make": vendor_info.get("name", "Unknown"),
-                "model": quote.get("carGroupInfo", {}).get("name", "Unknown Model"),
-                "year": datetime.now().year,  # API doesn't provide year
-                "daily_rate": quote.get("price", {}).get("amount", 0) / max(1, (datetime.strptime(end_date, "%Y-%m-%d") - datetime.strptime(start_date, "%Y-%m-%d")).days),
-                "total_price": quote.get("price", {}).get("amount", 0),
-                "location": {
-                    "pickup": location,
-                    "dropoff": quote.get("dropOffLocation", location)
-                },
-                "dates": {
-                    "pickup": start_date,
-                    "dropoff": end_date
-                },
-                "features": quote.get("carGroupInfo", {}).get("features", []),
-                "availability": "available",
-                "deep_link": quote.get("deepLink", ""),
-                "vendor": vendor_info.get("name", ""),
-                "agent": agent_info.get("name", "")
-            }
-            
-            available_cars.append(car)
-        
-        return {
-            "location": location,
-            "search_dates": {
-                "start": start_date,
-                "end": end_date
-            },
-            "available_cars": available_cars,
-            "source": "api"
+    """
+    Service class for interacting with 'booking-com-api5.p.rapidapi.com' API via RapidAPI.
+    Gets car rental data, processes to extract key information, sorts by price by default,
+    returns top 10 results.
+    """
+    def __init__(self, rapidapi_key: str):
+        """
+        Initialize the service with a RapidAPI key.
+
+        Args:
+            rapidapi_key (str): Your RapidAPI key.
+        """
+        if not rapidapi_key or rapidapi_key == "YOUR_RAPIDAPI_KEY" or len(rapidapi_key) < 30:
+            raise ValueError("A valid RapidAPI key is required.")
+
+        self.api_key = rapidapi_key
+        self.api_host = "booking-com-api5.p.rapidapi.com"
+        self.base_url = f"https://{self.api_host}"
+        self.endpoint = "/car/avaliable-car" # Note the API provider's spelling
+        self.headers = {
+            "X-RapidAPI-Key": self.api_key,
+            "X-RapidAPI-Host": self.api_host
         }
-    
-    def get_rental_details(self, rental_id):
-        """Get details for a specific car rental"""
-        # Check cache first
-        cache_key = f"rental_detail_{rental_id}"
-        if cache_key in self.cache:
-            cached_data = self.cache[cache_key]
-            return cached_data["data"]
-        
-        # Make API call to car rental service
-        try:
-            url = f"{self.base_url}/rentals/{rental_id}"
-            headers = {"api-key": self.api_key}
-            
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            result = response.json()
-            
-            # Cache the result
-            self.cache[cache_key] = {
-                "data": result,
-                "timestamp": datetime.now().timestamp()
-            }
-            self._save_cache()
-            
-            return result
-            
-        except Exception as e:
-            print(f"Error fetching rental details: {e}")
-            raise
-    
-    def book_car_rental(self, car_id, user_info):
-        """Book a specific car rental"""
-        try:
-            url = f"{self.base_url}/bookings/create"
-            headers = {
-                "Content-Type": "application/json",
-                "api-key": self.api_key
-            }
-            
-            payload = {
-                "quoteId": car_id,
-                "customerDetails": {
-                    "name": user_info.get("name"),
-                    "email": user_info.get("email"),
-                    "phone": user_info.get("phone")
+        print(f"CarRentalService initialized, host: {self.api_host}")
+
+    def _process_response(self, api_response: dict) -> list[dict]:
+        """
+        (Internal helper method) Process the raw API response, extract simplified information.
+        """
+        if not api_response or not isinstance(api_response, dict): return [] # Basic check
+        search_results = api_response.get("data", {}).get("search_results", [])
+        if not isinstance(search_results, list): return [] # Check if it's a list
+        if not search_results: return [] # Check if the list is empty
+
+        processed_cars = []
+
+        for offer in search_results:
+            if not isinstance(offer, dict): continue # Skip invalid items
+            try:
+                pricing_info = offer.get("pricing_info", {})
+                vehicle_info = offer.get("vehicle_info", {})
+                supplier_info = offer.get("supplier_info", {})
+                route_info = offer.get("route_info", {})
+                pickup_info = route_info.get("pickup", {})
+
+                price = pricing_info.get("drive_away_price")
+                if price is None: continue # Skip items without price
+
+                car_data = {
+                    "car_model": vehicle_info.get("v_name", "N/A"),
+                    "car_group": vehicle_info.get("group", "N/A"),
+                    "price": price,
+                    "currency": pricing_info.get("currency", ""),
+                    "image_url": vehicle_info.get("image_url"),
+                    "pickup_location_name": pickup_info.get("name", "N/A"),
+                    "supplier_name": supplier_info.get("name", "N/A"),
                 }
-            }
-            
-            response = requests.post(url, json=payload, headers=headers)
-            response.raise_for_status()
-            return response.json()
-            
-        except Exception as e:
-            print(f"Error booking car rental: {e}")
-            raise
-    
-    def cancel_booking(self, booking_reference):
-        """Cancel a car rental booking"""
+                processed_cars.append(car_data)
+            except Exception as e:
+                print(f"Warning: Error processing individual offer: {e}")
+                continue
+
+        print(f"Processed {len(processed_cars)} valid car rental options.")
+        return processed_cars
+
+    def _sort_and_limit(self, processed_cars: list[dict], sort_by='price', limit=30) -> list[dict]:
+        """(Internal helper method) Sort and limit the list."""
+        if not processed_cars: return []
+        # ... (sorting and limiting logic remains unchanged) ...
+        key_func = None; reverse_sort = False
+        if sort_by == 'price':
+            key_func = lambda x: x.get('price', float('inf')); reverse_sort = False
+            print("Sorting by price (low to high)...")
+        else: print(f"Warning: Unknown sorting option '{sort_by}'.")
+        if key_func:
+            try: processed_cars.sort(key=key_func, reverse=reverse_sort)
+            except Exception as e: print(f"Sorting error: {e}.")
+        final_count = min(len(processed_cars), limit)
+        print(f"Limiting results to top {final_count}.")
+        return processed_cars[:final_count]
+
+    def find_available_cars(
+        self,
+        # ... (method parameter definitions remain unchanged) ...
+        pickup_lat: float, pickup_lon: float, pickup_date: str, pickup_time: str, # HH:MM:SS
+        dropoff_lat: float, dropoff_lon: float, dropoff_date: str, dropoff_time: str, # HH:MM:SS
+        currency_code: str, driver_age: int | None = None, language_code: str | None = None,
+        pickup_loc_name: str | None = None, dropoff_loc_name: str | None = None,
+        pickup_city: str | None = None, dropoff_city: str | None = None
+    ) -> list[dict] | None:
+        """
+        Search for available vehicles, process results, sort by price, and return up to 10 results.
+
+        Args: (same as previously defined)
+
+        Returns:
+            List of dictionaries with simplified vehicle information (up to 10 items), sorted by price.
+            Returns None if the API call critically fails.
+        """
+        # --- Build API request parameters ---
+        url = self.base_url + self.endpoint
+        querystring = {
+            "pickup_latitude": pickup_lat, "pickup_longtitude": pickup_lon, # API's spelling
+            "pickup_date": pickup_date, "pickup_time": pickup_time,      # HH:MM:SS
+            "dropoff_latitude": dropoff_lat, "dropoff_longtitude": dropoff_lon, # API's spelling
+            "drop_date": dropoff_date,        # API's name
+            "drop_time": dropoff_time,        # API's name, HH:MM:SS
+            "currency_code": currency_code
+        }
+        if driver_age is not None: querystring["driver_age"] = driver_age
+        if language_code is not None: querystring["languagecode"] = language_code
+        if pickup_loc_name is not None: querystring["pickup_location"] = pickup_loc_name
+        if dropoff_loc_name is not None: querystring["dropoff_location"] = dropoff_loc_name
+
+        print(f"Preparing request URL: {url}")
+        print(f"Query parameters: {querystring}")
+
         try:
-            url = f"{self.base_url}/bookings/{booking_reference}/cancel"
-            headers = {"api-key": self.api_key}
-            
-            response = requests.post(url, headers=headers)
+            # --- Send API request ---
+            response = requests.get(url, headers=self.headers, params=querystring, timeout=45)
             response.raise_for_status()
-            return response.json()
-            
-        except Exception as e:
-            print(f"Error cancelling booking: {e}")
-            raise
+            print(f"API request successful (status code: {response.status_code})")
+            raw_data = response.json()
 
+            # --- Process, sort, limit ---
+            processed_data = self._process_response(raw_data)
+            final_results = self._sort_and_limit(processed_data, sort_by='price', limit=10)
 
-# Test code to demonstrate the CarRentalService functionality
-if __name__ == "__main__":
-    # Create an instance of the CarRentalService
-    car_service = CarRentalService()
-    
-    # Set up test parameters
-    location = "Los Angeles"
-    today = datetime.now()
-    start_date = (today + timedelta(days=7)).strftime("%Y-%m-%d")
-    end_date = (today + timedelta(days=10)).strftime("%Y-%m-%d")
-    
-    print(f"Searching for cars in {location} from {start_date} to {end_date}...")
-    
-    try:
-        # Search for available cars
-        search_result = car_service.search_available_cars(location, start_date, end_date)
-        
-        # Print search results summary
-        print(f"\nFound {len(search_result['available_cars'])} available cars in {location}")
-        
-        # Print details of the first car
-        if search_result['available_cars']:
-            first_car = search_result['available_cars'][0]
-            print("\nFirst available car details:")
-            print(f"Make/Model: {first_car['make']} {first_car['model']}")
-            print(f"Type: {first_car['vehicle_type']}")
-            print(f"Daily rate: ${first_car['daily_rate']:.2f}")
-            print(f"Total price: ${first_car['total_price']:.2f}")
-            
-            # Get rental details for the first car
-            car_id = first_car['id']
-            print(f"\nGetting detailed information for car ID: {car_id}")
-            rental_details = car_service.get_rental_details(car_id)
-            
-            # Book the car
-            print("\nBooking the car...")
-            user_info = {
-                "name": "John Doe",
-                "email": "john.doe@example.com",
-                "phone": "123-456-7890"
-            }
-            booking_result = car_service.book_car_rental(car_id, user_info)
-            
-            # Print booking confirmation
-            print(f"\nBooking confirmed!")
-            print(f"Booking reference: {booking_result.get('bookingReference')}")
-            print(f"Status: {booking_result.get('status')}")
-            
-            # Cancel the booking
-            booking_ref = booking_result.get('bookingReference')
-            print(f"\nCancelling booking {booking_ref}...")
-            cancellation_result = car_service.cancel_booking(booking_ref)
-            
-            # Print cancellation confirmation
-            print(f"Cancellation status: {cancellation_result.get('status')}")
-            print(f"Message: {cancellation_result.get('message', 'Booking successfully cancelled')}")
-        else:
-            print("No cars available for the selected dates and location.")
-    except Exception as e:
-        print(f"An error occurred during testing: {e}")
+            return final_results # Return the final results list
+
+        # --- Error handling ---
+        # (error handling logic remains unchanged)
+        except requests.exceptions.Timeout as e: print(f"Error: Request timed out - {e}"); return None
+        except requests.exceptions.RequestException as e: print(f"Error: Network or request issue - {e}"); return None
+        except json.JSONDecodeError as e: print(f"Error: Failed to parse JSON response - {e}"); print(f"Received raw response text (first 500 chars): {response.text[:500]}"); return None
+        except Exception as e: print(f"Unexpected error occurred: {e}"); return None
