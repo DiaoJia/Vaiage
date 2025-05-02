@@ -83,13 +83,14 @@ class CommunicationAgent:
             "response_message": response_message
         }
     
-    def generate_booking_confirmation(self, itinerary, budget_estimate, car_rental=None):
+    def generate_booking_confirmation(self, itinerary, budget_estimate, car_rental=None, user_name=None):
         """Generate booking confirmation message"""
         itinerary_summary = f"{len(itinerary)} days, starting on {itinerary[0]['date']}"
         attractions_count = sum(len(day['spots']) for day in itinerary)
+        name = user_name if user_name else "Traveler"
         
         prompt = f"""
-        Generate a friendly, comprehensive trip confirmation message with the following details:
+        Generate a friendly, comprehensive trip confirmation message to {name} with the following details:
         
         Itinerary: {itinerary_summary}
         Number of attractions: {attractions_count}
@@ -105,7 +106,7 @@ class CommunicationAgent:
         """
         
         messages = [
-            SystemMessage(content="You are a travel assistant sending a trip confirmation message."),
+            SystemMessage(content="You are a travel assistant called Vaiage sending a trip confirmation message."),
             HumanMessage(content=prompt)
         ]
         
