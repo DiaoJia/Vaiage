@@ -178,6 +178,30 @@ def stream():
             yield f"data: {{\"type\": \"error\", \"error\": {json.dumps(str(e))} }}\n\n"
     return Response(generate(), mimetype='text/event-stream')
 
+@app.route('/api/nearby/<attraction_id>')
+def get_nearby_places(attraction_id):
+    """Get nearby restaurants and street information for an attraction"""
+    session_id = session.get('session_id')
+    
+    if not session_id or session_id not in workflows:
+        return jsonify({"error": "Session not found"}), 404
+    
+    workflow = workflows[session_id]
+    info_agent = workflow.info_agent
+    
+    # Parse coordinates from attraction_id
+    try:
+        lat_str, lng_str = attraction_id.split(',')
+        lat, lng = float(lat_str), float(lng_str)
+    except Exception:
+        return jsonify({"error": "Invalid coordinates format. Use 'lat,lng'."}), 400
+    
+    try:
+        result = info_agent.search_nearby_places(lat, lng)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": f"Failed to get nearby places: {str(e)}"}), 500
+    
 if __name__ == '__main__':
     # Create data directory if it doesn't exist
     os.makedirs('data', exist_ok=True)

@@ -352,11 +352,6 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateAttractions(attractions) {
         recommendationsContainer.innerHTML = '';
         
-        if (attractions.length === 0) {
-            recommendationsContainer.innerHTML = '<p class="text-center text-muted">No attractions found.</p>';
-            return;
-        }
-        
         attractions.forEach(attraction => {
             const card = document.createElement('div');
             card.className = 'card mb-2';
@@ -396,6 +391,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     state.selectedAttractions.push(attraction);
                     // Add marker to map
                     addMarkerToMap(attraction);
+                    // 获取并显示周边信息，直接传入整个attraction对象
+                    fetchNearbyPlaces(attraction);
                 } else {
                     // Remove from selected attractions
                     state.selectedAttractions = state.selectedAttractions.filter(a => a.id !== attraction.id);
@@ -722,6 +719,45 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Fit bounds to show the entire route
         map.fitBounds(polyline.getBounds().pad(0.1));
+    }
+
+    // Modify fetchNearbyPlaces function
+    function fetchNearbyPlaces(attraction) {
+        // Use latitude and longitude instead of name
+        const coordinates = `${attraction.location.lat},${attraction.location.lng}`;
+        fetch(`/api/nearby/${coordinates}`)
+            .then(response => response.json())
+            .then(data => {
+                // Display nearby information in the chat box
+                const nearbyMessage = formatNearbyPlacesMessage(data);
+                addChatMessage(nearbyMessage, 'assistant');
+            })
+            .catch(error => {
+                console.error('Error fetching nearby places:', error);
+                addChatMessage('Sorry, there was an error fetching nearby places. Please try again later.', 'assistant');
+            });
+    }
+
+    // Format nearby information message
+    function formatNearbyPlacesMessage(data) {
+        let message = '### Nearby Recommendations\n\n';
+
+        // Nearby Restaurants
+        if (data.restaurants && data.restaurants.length > 0) {
+            message += '#### 🍽️ Nearby Restaurants\n';
+            data.restaurants.forEach(restaurant => {
+                message += `<div class=\"nearby-item\" style=\"margin-bottom:18px;\">`;
+                if (restaurant.photos && restaurant.photos.length > 0) {
+                    message += `<img src=\"${restaurant.photos[0].url}\" style=\"max-width:180px; border-radius:8px; display:block; margin-bottom:6px;\" />`;
+                }
+                message += `<div style=\"font-weight:bold; margin-bottom:2px;\">${restaurant.name}</div>`;
+                message += `<div style=\"font-size:13px; color:#555;\">Type: ${restaurant.type} | Rating: ${restaurant.rating}⭐</div>`;
+                message += `<div style=\"font-size:13px; color:#555;\">Price: ${'💰'.repeat(restaurant.price_level)} | Address: ${restaurant.address}</div>`;
+                message += `</div>`;
+            });
+        }
+
+        return message;
     }
 
     // Make functions available globally

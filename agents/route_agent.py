@@ -224,8 +224,40 @@ class RouteAgent:
         
         # Add car rental if needed
         if user_prefs.get("car_rental", False):
-            car_cost_daily = {"low": 30, "medium": 50, "high": 80}
-            total += car_cost_daily[budget_level] * int(num_days)
+            car_options = user_prefs["recommend_car"]
+            selected_car = car_options[0]
+            car_rental_cost = selected_car["price"] * int(num_days)
+            total += car_rental_cost
+
+            # Calculate transport cost if car_rental is true
+            route = self.get_optimal_route(spots)
+            total_distance = 0
+            for i in range(len(route)-1):
+                total_distance += self._calculate_distance(route[i], route[i+1])
+        
+            fuel_costs = {
+                "low": {
+                    "price_per_liter": 1.2,  # USD/liter
+                    "fuel_efficiency": 7.0,   # liters/100km
+                    "car_type": "Economy"
+                },
+                "medium": {
+                    "price_per_liter": 1.2,
+                    "fuel_efficiency": 8.5,   # Slightly higher for mid-range cars
+                    "car_type": "Mid-range"
+                },
+                "high": {
+                    "price_per_liter": 1.2,
+                    "fuel_efficiency": 10.0,  # Higher for luxury cars
+                    "car_type": "Luxury"
+                }
+            }
+        
+            # Calculate fuel cost
+            fuel_info = fuel_costs[budget_level]
+            fuel_consumption = (total_distance * fuel_info["fuel_efficiency"]) / 100  # Total fuel consumption (liters)
+            fuel_cost = fuel_consumption * fuel_info["price_per_liter"]  # Total fuel cost
+            total += fuel_cost
         
         # Return detailed budget
         return {
@@ -234,7 +266,9 @@ class RouteAgent:
             "food": base_costs[budget_level]["food"] * int(num_days) * int(num_people),
             "transport": base_costs[budget_level]["transport"] * int(num_days) * int(num_people),
             "attractions": attraction_cost,
-            "car_rental": car_cost_daily[budget_level] * int(num_days) if user_prefs.get("car_rental", False) else 0
+            "car_rental": car_rental_cost if user_prefs.get("car_rental", False) else 0,
+            "fuel_cost": fuel_cost if user_prefs.get("car_rental", False) else 0 ,
+
         }
     
     # budget估算为什么全部放在route_agent里？是否应该强调交通成本？
