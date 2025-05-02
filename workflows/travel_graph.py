@@ -400,7 +400,8 @@ class TravelGraph:
             confirmation = self.comm_agent.generate_booking_confirmation(
                 itinerary,
                 budget,
-                self.state["should_rent_car"]
+                self.state["should_rent_car"],
+                self.state["user_info"].get("name", "Traveler"),
             )
             
             return {
