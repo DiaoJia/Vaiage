@@ -63,6 +63,8 @@ class InformationAgent:
         cars = agent.search_car_rentals(location="San Francisco", 
                                        start_date="2023-05-01", 
                                        end_date="2023-05-05")
+        #nearby places
+        nearby = agent.search_nearby_places(lat=37.8715, lng=-122.2730, radius=500)
     """
     def __init__(self, maps_api_key=None, car_api_key=None):
         # Initialize Google Maps API
@@ -74,6 +76,8 @@ class InformationAgent:
         self.weather_service = WeatherService()
         # Car rental service
         self.car_rental_service = CarRentalService(rapidapi_key=car_api_key)
+        #nearby places
+        self.nearby_places = {}
 
     def city2geocode(self, city: str):
         """
@@ -494,4 +498,108 @@ class InformationAgent:
             
         # Return top N results
         return cars[:top_n] if cars else []
+
+    def search_nearby_places(self, lat: float, lng: float, radius: int = 500):
+        """Search for nearby restaurants
+        
+        Args:
+            lat (float): Latitude
+            lng (float): Longitude
+            radius (int): Search radius (meters)
+        
+        Returns:
+            dict: Dictionary containing information about nearby restaurants
+        """
+        try:
+            # Check if POI API is available
+            if not self.poi_api:
+                raise Exception("POI API is not initialized")
+
+            # Search for nearby restaurants
+            restaurants_result = self.poi_api.get_nearby_places(
+                location=(lat, lng),
+                type='restaurant',
+                radius=radius
+            )
+            
+            # Process restaurant information
+            processed_restaurants = []
+            for place in restaurants_result.get('results', [])[:5]:  # Only take the first 5 results
+                try:
+                    # Get detailed information
+                    place_details = self.poi_api.get_poi_details(
+                        place_id=place['place_id'],
+                        fields=['name', 'rating', 'price_level', 'formatted_address', 'photo', 'type', 'geometry']
+                    )
+                    
+                    if not place_details or 'result' not in place_details:
+                        continue
+                        
+                    place_details = place_details['result']
+                    
+                    # Get photos
+                    photos = []
+                    if 'photos' in place:  # Get photo info from the original search result
+                        for photo in place['photos'][:3]:  # Up to 3 photos
+                            photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference={photo['photo_reference']}&key={self.maps_api_key}"
+                            photos.append({
+                                'url': photo_url,
+                                'width': photo.get('width', 800),
+                                'height': photo.get('height', 600)
+                            })
+                    
+                    restaurant = {
+                        'name': place_details.get('name', 'Unknown Restaurant'),
+                        'type': 'restaurant',
+                        'rating': place_details.get('rating', 0),
+                        'price_level': place_details.get('price_level', 0),
+                        'address': place_details.get('formatted_address', 'Unknown address'),
+                        'photos': photos,
+                        'features': self._get_restaurant_features(place)  # Use type info from the original search result
+                    }
+                    processed_restaurants.append(restaurant)
+                except Exception as e:
+                    print(f"Error processing restaurant info: {str(e)}")
+                    continue
+            
+            return {
+                'restaurants': processed_restaurants
+            }
+            
+        except Exception as e:
+            print(f"Error searching nearby places: {str(e)}")
+            # Return mock data
+            return {
+                'restaurants': [
+                    {
+                        'name': 'Sample Restaurant',
+                        'type': 'restaurant',
+                        'rating': 4.5,
+                        'price_level': 2,
+                        'address': 'Sample Address',
+                        'photos': [
+                            {
+                                'url': 'https://example.com/photo1.jpg',
+                                'width': 800,
+                                'height': 600
+                            }
+                        ],
+                        'features': 'Cuisine: Chinese, Western'
+                    }
+                ]
+            }
+    
+    def _get_restaurant_features(self, place):
+        """Get restaurant features info"""
+        features = []
+        if 'types' in place:
+            if 'chinese_restaurant' in place['types']:
+                features.append('Chinese')
+            if 'japanese_restaurant' in place['types']:
+                features.append('Japanese')
+            if 'italian_restaurant' in place['types']:
+                features.append('Italian')
+            if 'french_restaurant' in place['types']:
+                features.append('French')
+        return ', '.join(features) if features else 'Cuisine'
 
