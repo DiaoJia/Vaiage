@@ -384,6 +384,9 @@ class TravelGraph:
                 optimal_route.extend(day["spots"])
             
             # Estimate budget
+            if self.state["user_info"].get("car_rental"):
+                self.state["user_info"]["recommend_car"] = self.info_agent._get_mock_car_data()
+            
             budget = self.route_agent.estimate_budget(
                 all_attractions,
                 self.state["user_info"]
