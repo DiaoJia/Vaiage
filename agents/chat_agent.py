@@ -8,7 +8,7 @@ class ChatAgent:
     def __init__(self, model_name="gpt-3.5-turbo"):
         """Initialize the ChatAgent with specified model"""
         self.model = ChatOpenAI(model_name=model_name, temperature=0.7, streaming=True)
-        self.required_fields = ["city", "days", "budget", "people", "kids", "health", "hobbies", "start_date"]
+        self.required_fields = ["name", "city", "days", "budget", "people", "kids", "health", "hobbies"]
         self.conversation_history = []
         
     def _init_system_message(self):
