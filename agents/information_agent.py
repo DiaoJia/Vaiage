@@ -1,6 +1,9 @@
 import os
 import sys
+import json
 import googlemaps
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
 from datetime import datetime
 
 # Add the parent directory to sys.path to allow imports from services
@@ -47,7 +50,7 @@ class InformationAgent:
     for travel-related data needs.
     
     Usage:
-        agent = UnifiedInformationAgent()
+        agent = InformationAgent()
         
         # Find points of interest
         pois = agent.find_pois(lat=37.8715, lng=-122.2730, number=5, poi_type="tourist_attraction")
@@ -68,12 +71,10 @@ class InformationAgent:
         # Initialize Google Maps API
         self.maps_api_key = maps_api_key or os.getenv("MAPS_API_KEY")
         self.gmaps = googlemaps.Client(key=self.maps_api_key)
-        # POI service
         self.poi_api = POIApi(self.maps_api_key)
-        # Weather service
         self.weather_service = WeatherService()
-        # Car rental service
         self.car_rental_service = CarRentalService(rapidapi_key=car_api_key)
+        self.weather_summary_writer = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7,streaming=True)
 
     def city2geocode(self, city: str):
         """
@@ -393,7 +394,7 @@ class InformationAgent:
             # traceback.print_exc()
             return None
 
-    def get_weather(self, lat: float, lng: float, start_date: str, duration: int):
+    def get_weather(self, lat: float, lng: float, start_date: str, duration: int, summary: bool = True):
         """
         Weather Forecast:
         
@@ -420,8 +421,44 @@ class InformationAgent:
                 ...
             ]
         """
-        return self.weather_service.get_weather(lat, lng, start_date, duration)
-
+        # Get detailed weather data first
+        weather_data = self.weather_service.get_weather(lat, lng, start_date, duration)
+        
+        # If no weather data, return empty result
+        if not weather_data:
+            return {'detailed_forecast': [], 'summary': None}
+        
+        # Create result dictionary with detailed forecast
+        result = {
+            'detailed_forecast': weather_data,
+            'summary': None
+        }
+        
+        # Generate summary if requested
+        if summary:
+            # Create a prompt for the summary writer
+            weather_info = json.dumps(weather_data, indent=2)
+            prompt = f"""
+            Summarize the following weather forecast in a concise paragraph (max 100 words).
+            Include key information about temperature ranges, precipitation, and any notable weather conditions.
+            Also mention any precautions travelers should take based on the forecast.
+            
+            Weather data:
+            {weather_info}
+            """
+            
+            # Generate the summary
+            messages = [
+                SystemMessage(content="You are a helpful weather assistant that provides concise summaries of weather forecasts for travelers."),
+                HumanMessage(content=prompt)
+            ]
+            
+            # Add the summary to the result
+            result['summary'] = self.weather_summary_writer.invoke(messages)
+        
+        return result
+            
+        
     def search_car_rentals(self, location: str, start_date: str, end_date: str,
                            driver_age: int = 30, min_price: float = None, 
                            max_price: float = None, top_n: int = 5):

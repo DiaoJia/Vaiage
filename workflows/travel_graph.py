@@ -138,6 +138,11 @@ class TravelGraph:
         attractions = self.info_agent.get_attractions(city_coordinates["lat"], city_coordinates["lng"], poi_type="tourist_attraction", sort_by="rating")
         self.state["attractions"] = attractions
         
+        # Get weather information
+        if self.state["user_info"].get("start_date", "not decided") != "not decided":
+            weather_summary = self.info_agent.get_weather(city_coordinates["lat"], city_coordinates["lng"], self.state["user_info"]["start_date"], self.state["user_info"]["days"])
+            self.state["weather_summary"] = weather_summary["summary"]
+            
         # Create a generator that yields the information message
         def info_generator():
             yield AIMessage(content=f"Found {len(attractions)} attractions in {city}.")
@@ -155,6 +160,7 @@ class TravelGraph:
         try:
             user_prefs = self.state["user_info"]
             attractions = self.state["attractions"]
+            
             
             # Check if we have selected_attraction_ids in kwargs
             if 'selected_attraction_ids' in kwargs and kwargs['selected_attraction_ids']:
@@ -188,7 +194,7 @@ class TravelGraph:
                         "map_data": []
                     }
                 
-                recommended = self.recommend_agent.recommend_core_attractions(user_prefs, attractions)
+                recommended = self.recommend_agent.recommend_core_attractions(user_prefs, attractions,)
                 
                 # Create a generator that yields the recommendation message
                 def recommendation_generator():

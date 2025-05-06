@@ -69,7 +69,6 @@ class RecommendAgent:
         """Create prompt for the LLM to rank attractions"""
         attractions_str = json.dumps(attractions, indent=2)
         user_prefs_str = json.dumps(user_prefs, indent=2)
-        
         return f"""
         Given the following user preferences and attractions, rank the attractions from most suitable to least suitable.
         

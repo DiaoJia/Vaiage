@@ -8,7 +8,7 @@ class ChatAgent:
     def __init__(self, model_name="gpt-3.5-turbo"):
         """Initialize the ChatAgent with specified model"""
         self.model = ChatOpenAI(model_name=model_name, temperature=0.7, streaming=True)
-        self.required_fields = ["city", "days", "budget", "people", "kids", "health", "hobbies"]
+        self.required_fields = ["city", "days", "budget", "people", "kids", "health", "hobbies", "start_date"]
         self.conversation_history = []
         
     def _init_system_message(self):
@@ -87,10 +87,11 @@ class ChatAgent:
         system_prompt = f"""Extract the following travel information from the user's message and return JSON.
         Carefully analyze the message to understand both explicit and implicit information.
         
+
         For example, if the user says "without kids" or "no children", set "kids" to "no".
         If they mention "all adults", also set "kids" to "no".
         If they mention family with children, set "kids" to "yes".
-        
+        Specifically, if the user gives a start date, set "start_date" in YYYY-MM-DD format string.Otherwise, set "start_date" to "not decided".
         Pay attention to negations and context. Don't just look for keywords, understand the meaning.
         
         Return the following JSON structure:
