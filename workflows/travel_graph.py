@@ -7,71 +7,66 @@ from agents.communication_agent import CommunicationAgent
 from datetime import datetime
 from langchain.schema import AIMessage
 
+import traceback
 # This is a simplified state graph manager since we're not using the actual langgraph library
 class TravelGraph:
     def __init__(self):
-        """Initialize the travel planning workflow graph"""
         self.chat_agent = ChatAgent()
-        self.info_agent = InformationAgent()
-        self.recommend_agent = RecommendAgent()
+        self.info_agent = InformationAgent() # InfoAgent now handles LLM re-ranking
+        self.recommend_agent = RecommendAgent() # Still used for map_data, etc.
         self.strategy_agent = StrategyAgent()
         self.route_agent = RouteAgent()
         self.comm_agent = CommunicationAgent()
         
-        # Store state
-        self.state = {
+        self.state = { # Default state for a new session
             "user_info": {},
-            "attractions": [],
+            "attractions": [], # This will hold LLM-ranked attractions from InfoAgent
+            "weather_summary": None, # To store weather summary string
             "selected_attractions": [],
             "additional_attractions": [],
             "should_rent_car": False,
             "rental_post": None,
             "itinerary": [],
             "budget": {},
-            "ai_recommendation_generated": False,
-            "user_input_processed": False
+            "ai_recommendation_generated": False, # Flag for strategy AI advice
         }
-        
-        # Store session state
-        self.session_states = {}
+        self.session_states = {} # To store states for different sessions
     
     def get_session_state(self, session_id):
-        """Get or create session state"""
         if session_id not in self.session_states:
-            self.session_states[session_id] = self.state.copy()
+            # Create a new state by copying the default state structure
+            self.session_states[session_id] = {
+                "user_info": {}, "attractions": [], "weather_summary": None,
+                "selected_attractions": [], "additional_attractions": [],
+                "should_rent_car": False, "rental_post": None, "itinerary": [], "budget": {},
+                "ai_recommendation_generated": False,
+            }
         return self.session_states[session_id]
     
     def process_step(self, step_name, session_id=None, **kwargs):
-        """Process a specific step in the workflow"""
-        print(f"[DEBUG] Processing step {step_name} with session_id: {session_id}")
-        print(f"[DEBUG] Initial kwargs: {kwargs}")
+        # print(f"[DEBUG] Processing step {step_name} for session_id: {session_id}")
+        # print(f"[DEBUG] Initial kwargs: {kwargs}")
         
-        # Get session state
         if session_id:
             self.state = self.get_session_state(session_id)
-            print(f"[DEBUG] Retrieved session state: {self.state}")
+            # print(f"[DEBUG] Retrieved session state: {self.state}")
         else:
-            # If no session_id, create a new one
-            session_id = str(id(self))
+            session_id = str(id(self)) # Fallback if no session_id, though it should be provided
             self.state = self.get_session_state(session_id)
-            print(f"[DEBUG] Created new session with id: {session_id}")
+            print(f"[WARN] No session_id provided, created fallback session: {session_id}")
         
-        # Update state flags from kwargs if provided
-        if 'ai_recommendation_generated' in kwargs:
-            self.state['ai_recommendation_generated'] = kwargs['ai_recommendation_generated'].lower() == 'true'
-            print(f"[DEBUG] Updated ai_recommendation_generated to: {self.state['ai_recommendation_generated']}")
-        if 'user_input_processed' in kwargs:
-            self.state['user_input_processed'] = kwargs['user_input_processed'].lower() == 'true'
-            print(f"[DEBUG] Updated user_input_processed to: {self.state['user_input_processed']}")
+        if 'ai_recommendation_generated' in kwargs: # Ensure flag is a boolean
+            self.state['ai_recommendation_generated'] = str(kwargs['ai_recommendation_generated']).lower() == 'true'
         
-        print(f"[DEBUG] Current state before processing: {self.state}")
+        # print(f"[DEBUG] State before processing {step_name}: {self.state}")
         
+        result = {}
         if step_name == "chat":
             result = self._process_chat(**kwargs)
         elif step_name == "information":
-            result = self._process_information(**kwargs)
+            result = self._process_information(**kwargs) # This will now call the updated InfoAgent
         elif step_name == "recommend":
-            result = self._process_recommend(**kwargs)
+            result = self._process_recommend(**kwargs) # This uses the already LLM-ranked list
         elif step_name == "strategy":
             result = self._process_strategy(**kwargs)
         elif step_name == "route":
@@ -81,78 +76,105 @@ class TravelGraph:
         else:
             result = {"error": f"Unknown step: {step_name}"}
         
-        # Always save state and include session_id in result
-        self.session_states[session_id] = self.state.copy()
-        result["session_id"] = session_id
-        print(f"[DEBUG] Saved session state: {self.session_states[session_id]}")
-        
-        print(f"[DEBUG] Final state after processing: {self.state}")
-        print(f"[DEBUG] Returning result: {result}")
+        self.session_states[session_id] = self.state.copy() # Save a copy of the modified state
+        result["session_id"] = session_id # Ensure session_id is always in the result
+        # print(f"[DEBUG] State after processing {step_name}: {self.state}")
+        # print(f"[DEBUG] Result for {step_name}: {result}")
         return result
     
     def _process_chat(self, user_input=None, **kwargs):
-        """Process chat agent step"""
-        """Process user chat, collect info incrementally, and advance when complete."""
-        # Collect and merge info
-        result = self.chat_agent.collect_info(user_input or "", self.state["user_info"])
+        current_user_info = self.state.get("user_info", {}).copy() # Important to work with a copy for updates
+        chat_result = self.chat_agent.collect_info(user_input or "", current_user_info)
         
-        # Update state with new information
-        if result.get("state"):
-            # Merge new state with existing state instead of overwriting
-            self.state["user_info"].update(result["state"])
-            print(f"[DEBUG] Updated user info in _process_chat: {self.state['user_info']}")  # Debug log
-        
-        # Base response structure
-        base = {
-            "state": self.state,
-            "stream": result.get("stream"),
-            "missing_fields": result.get("missing_fields", [])
+        if chat_result.get("state"):
+            self.state["user_info"].update(chat_result["state"]) # Merge updates
+            # print(f"[DEBUG] Updated user_info in _process_chat: {self.state['user_info']}")
+
+        response_data = {
+            "state": self.state.copy(), # Return a fresh copy of the current state
+            "stream": chat_result.get("stream"),
+            "missing_fields": chat_result.get("missing_fields", [])
         }
         
-        if not result["complete"]:
-            base["next_step"] = "chat"
-            return base
+        if not chat_result.get("complete", False): 
+            response_data["next_step"] = "chat"
+            return response_data
             
-        # If complete, chain to information step automatically
-        info = self._process_information()
-        info.update({
-            "state": self.state
-        })
-        return info
+        # If chat is complete, automatically proceed to information gathering
+        # The state (self.state) is already updated, _process_information will use it.
+        info_step_result = self._process_information() 
+        return info_step_result # This result will contain next_step, stream, data, and state
     
     def _process_information(self, **kwargs):
-        """Process information agent step"""
-        city = self.state["user_info"].get("city")
+        user_prefs = self.state["user_info"]
+        city = user_prefs.get("city")
+
+        if not city:
+            def error_gen(): yield AIMessage(content="Please tell me which city you'd like to visit.")
+            return {"next_step": "chat", "stream": error_gen(), "missing_fields": ["city"], "state": self.state.copy()}
+
         city_coordinates = self.info_agent.city2geocode(city)
         if not city_coordinates:
-            # Create a generator that yields the error message
-            def error_generator():
-                yield AIMessage(content="We need to know which city you want to visit.")
-            
-            return {
-                "next_step": "chat",
-                "stream": error_generator()
-            }
+            def error_gen(): yield AIMessage(content=f"Sorry, I couldn't find coordinates for {city}.")
+            return {"next_step": "chat", "stream": error_gen(), "state": self.state.copy()}
         
-        # Get attractions for the specified city
-        attractions = self.info_agent.get_attractions(city_coordinates["lat"], city_coordinates["lng"], poi_type="tourist_attraction", sort_by="rating")
-        self.state["attractions"] = attractions
-        
-        # Get weather information
-        if self.state["user_info"].get("start_date", "not decided") != "not decided":
-            weather_summary = self.info_agent.get_weather(city_coordinates["lat"], city_coordinates["lng"], self.state["user_info"]["start_date"], self.state["user_info"]["days"])
-            self.state["weather_summary"] = weather_summary["summary"]
+        # Get weather summary first
+        weather_summary_str = None
+        user_start_date = user_prefs.get("start_date", "not decided")
+        user_days_str = user_prefs.get("days")
+
+        if user_start_date != "not decided" and user_days_str:
+            try:
+                num_days = int(user_days_str)
+                weather_data_result = self.info_agent.get_weather(
+                    city_coordinates["lat"], city_coordinates["lng"],
+                    user_start_date, num_days, summary=True
+                )
+                if weather_data_result and 'summary' in weather_data_result:
+                    summary_val = weather_data_result['summary']
+                    if hasattr(summary_val, 'content'): # If AIMessage
+                        weather_summary_str = summary_val.content
+                    elif isinstance(summary_val, str):
+                        weather_summary_str = summary_val
+                    self.state["weather_summary"] = weather_summary_str
+                    print(f"[DEBUG] Weather summary set in state: '{weather_summary_str}'")
+                else:
+                    print(f"[DEBUG] Weather summary not found or in unexpected format: {weather_data_result}")
+            except ValueError:
+                print(f"[ERROR] Invalid 'days' for weather: {user_days_str}")
+            except Exception as e:
+                print(f"[ERROR] Exception fetching weather summary: {e}")
+                traceback.print_exc()
+        else:
+            print("[DEBUG] Weather info not fetched (no start_date or days).")
             
-        # Create a generator that yields the information message
-        def info_generator():
-            yield AIMessage(content=f"Found {len(attractions)} attractions in {city}.")
+        # Get attractions - InfoAgent now handles LLM re-ranking internally
+        print(f"[DEBUG] Calling info_agent.get_attractions for '{city}' with user_prefs and weather.")
+        attractions_from_info_agent = self.info_agent.get_attractions(
+            lat=city_coordinates["lat"],
+            lng=city_coordinates["lng"],
+            user_prefs=user_prefs, # Pass full user_prefs
+            weather_summary=self.state.get("weather_summary"), # Pass fetched weather summary
+            number=15, # Desired number of top attractions after LLM ranking
+            poi_type="tourist_attraction"
+            # sort_by="rating" # Initial sort inside get_attractions before LLM
+        )
+        
+        self.state["attractions"] = attractions_from_info_agent if attractions_from_info_agent else []
+        print(f"[DEBUG] attractions state updated with {len(self.state['attractions'])} LLM-ranked items.")
+        
+        def info_gen_message():
+            if self.state["attractions"]:
+                yield AIMessage(content=f"I've prepared a personalized list of {len(self.state['attractions'])} attractions in {city} for you, considering your preferences and the weather. Please take a look and select your favorites.")
+            else:
+                yield AIMessage(content=f"I couldn't find attractions in {city} matching your preferences right now. You might want to try different criteria or another city.")
         
         return {
             "next_step": "recommend",
-            "stream": info_generator(),
-            "attractions": attractions,
-            "map_data": self.recommend_agent.generate_map_data(attractions),
-            "state": self.state
+            "stream": info_gen_message(),
+            "attractions": self.state["attractions"], # This list is now LLM-ranked
+            "map_data": self.recommend_agent.generate_map_data(self.state["attractions"]), # recommend_agent helps with map data
+            "state": self.state.copy()
         }
     
     def _process_recommend(self, selected_attraction_ids=None, **kwargs):

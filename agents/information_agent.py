@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import hashlib
 import googlemaps
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -37,146 +38,260 @@ def format_distance(meters):
     return f"{km:.1f} km / {miles:.1f} miles"
 
 class InformationAgent:
-    """
-    Information Agent
-    
-    This agent integrates multiple information services including:
-    - Points of Interest (POI) search
-    - Route planning
-    - Weather forecasting
-    - Car rental search
-    
-    All external information is retrieved through this agent, providing a single interface
-    for travel-related data needs.
-    
-    Usage:
-        agent = InformationAgent()
-        
-        # Find points of interest
-        pois = agent.find_pois(lat=37.8715, lng=-122.2730, number=5, poi_type="tourist_attraction")
-        
-        # Plan routes between locations
-        routes = agent.plan_routes(origin="University of California, Berkeley, CA", 
-                                  destination="Chase Center, San Francisco, CA")
-        
-        # Get weather forecast
-        weather = agent.get_weather(lat=37.8715, lng=-122.2730, start_date="2023-04-18", duration=3)
-        
-        # Search for car rentals
-        cars = agent.search_car_rentals(location="San Francisco", 
-                                       start_date="2023-05-01", 
-                                       end_date="2023-05-05")
-        #nearby places
-        nearby = agent.search_nearby_places(lat=37.8715, lng=-122.2730, radius=500)
-    """
-    def __init__(self, maps_api_key=None, car_api_key=None):
-        """Initialize InformationAgent with optional API keys"""
-        # Initialize Google Maps API
+    def __init__(self, maps_api_key=None, car_api_key=None, llm_model_name="gpt-4o-mini"):
         self.maps_api_key = maps_api_key or os.getenv("MAPS_API_KEY")
         self.rapidapi_key = car_api_key or os.getenv("RAPIDAPI_KEY")
         
+        if not self.maps_api_key:
+            raise ValueError("MAPS_API_KEY is required for InformationAgent.")
+
         self.gmaps = googlemaps.Client(key=self.maps_api_key)
         self.poi_api = POIApi(self.maps_api_key)
         self.weather_service = WeatherService()
-        # Car rental service
         self.car_rental_service = None
-        if self.rapidapi_key:
-            self.car_rental_service = CarRentalService(rapidapi_key=self.rapidapi_key)
-        #nearby places
-        self.nearby_places = {}
+        if self.rapidapi_key and self.rapidapi_key != "YOUR_RAPIDAPI_KEY" and len(self.rapidapi_key) >= 30:
+            try:
+                self.car_rental_service = CarRentalService(rapidapi_key=self.rapidapi_key)
+            except ValueError as e:
+                print(f"Error initializing CarRentalService: {e}. Car rental will use mock data.")
+                self.car_rental_service = None
+        else:
+            print("RAPIDAPI_KEY not configured correctly for CarRentalService. Car rental will use mock data.")
+
+        try:
+            self.llm = ChatOpenAI(model_name=llm_model_name, temperature=0.5)
+        except Exception as e:
+            print(f"Error initializing LLM ({llm_model_name}): {e}. LLM-dependent features might not work.")
+            self.llm = None
+
+        self.weather_summary_writer = self.llm 
+        self.llm_rerank_cache = {}
+
+    def _get_rerank_cache_key(self, user_prefs, attractions_ids_tuple, weather_summary):
+        prefs_str = json.dumps(user_prefs, sort_keys=True)
+        ids_str = json.dumps(attractions_ids_tuple, sort_keys=True)
+        weather_str = weather_summary if weather_summary else ""
+        hash_object = hashlib.sha256(f"{prefs_str}-{ids_str}-{weather_str}".encode())
+        return hash_object.hexdigest()
+
+    def _create_llm_rerank_prompt(self, user_prefs, attractions_for_llm, weather_summary):
+        attractions_str = json.dumps(attractions_for_llm, indent=2, ensure_ascii=False)
+        user_prefs_str = json.dumps(user_prefs, indent=2, ensure_ascii=False)
+        weather_str = weather_summary if weather_summary else "No specific weather summary provided."
+
+        prompt = f"""
+        You are an expert travel recommender. Your task is to rank the provided list of attractions based on the user's preferences, the details of each attraction, and the current weather summary.
+
+        User Preferences:
+        {user_prefs_str}
+
+        Weather Summary for the trip period:
+        {weather_str}
+
+        Attractions List (with details including their original 'id', 'name', 'category', 'estimated_duration', 'price_level', 'rating', and a brief 'description' if available):
+        {attractions_str}
+
+        Please consider the following factors for ranking:
+        1.  **User Hobbies & Interests**: Match with user's hobbies (e.g., '{user_prefs.get('hobbies', 'general sightseeing')}').
+        2.  **User Health & Accessibility**: Consider user's health (e.g., '{user_prefs.get('health', 'good')}') and attraction accessibility.
+        3.  **Suitability for Children**: If traveling with kids (e.g., Kids: '{user_prefs.get('kids', 'no')}'), prioritize child-friendly options.
+        4.  **Budget Constraints**: Align with budget (e.g., '{user_prefs.get('budget', 'medium')}').
+        5.  **Weather Impact**: Prioritize indoor/outdoor activities based on the weather.
+        6.  **Category Balance**: Aim for diversity in top recommendations. Also filter out duplicate attractions that are essentially the same place but listed differently.
+
+        Return a JSON list of attraction IDs, ranked from MOST to LEAST recommended.
+        The output MUST be a valid JSON list of strings (attraction IDs). For example:
+        ["id1", "id2", "id3"]
+
+        Only return the JSON list of IDs. Do not include any other text or explanation.
+        """
+        return prompt
+
+    def _rerank_attractions_with_llm(self, attractions_list: list, user_prefs: dict, weather_summary: str = None):
+        if not self.llm:
+            print("LLM not available for re-ranking. Returning original list.")
+            return attractions_list
+        if not attractions_list:
+            return []
+        if not user_prefs:
+             print("User preferences not provided for LLM re-ranking. Returning original list.")
+             return attractions_list
+
+        attractions_for_llm = []
+        for attr in attractions_list:
+            attractions_for_llm.append({
+                "id": attr.get("id"), "name": attr.get("name"), "category": attr.get("category"),
+                "description": attr.get("description", attr.get("name","No description available.")), 
+                "estimated_duration": attr.get("estimated_duration"),
+                "price_level": attr.get("price_level"), "rating": attr.get("rating"),
+            })
+        
+        attraction_ids_tuple = tuple(sorted([attr.get('id', '') for attr in attractions_for_llm]))
+        cache_key = self._get_rerank_cache_key(user_prefs, attraction_ids_tuple, weather_summary)
+
+        if cache_key in self.llm_rerank_cache:
+            print(f"Returning cached LLM re-ranking for key: {cache_key}")
+            ranked_ids = self.llm_rerank_cache[cache_key]
+        else:
+            prompt_str = self._create_llm_rerank_prompt(user_prefs, attractions_for_llm, weather_summary)
+            messages = [
+                SystemMessage(content="You are an expert travel recommender. Your goal is to rank attractions based on user preferences, attraction details, and weather conditions. Ensure a good balance of attraction categories if appropriate."),
+                HumanMessage(content=prompt_str)
+            ]
+            try:
+                print(f"[INFO_AGENT_LLM] Requesting LLM re-ranking for {len(attractions_for_llm)} items. Cache key: {cache_key}")
+                response = self.llm.invoke(messages)
+                llm_output_content = response.content
+                
+                ranked_ids = []
+                try:
+                    if llm_output_content.strip().startswith("```json"):
+                        llm_output_content = llm_output_content.strip()[7:]
+                        if llm_output_content.strip().endswith("```"):
+                            llm_output_content = llm_output_content.strip()[:-3]
+                    
+                    ranked_ids_data = json.loads(llm_output_content.strip())
+                    if isinstance(ranked_ids_data, list) and all(isinstance(id_val, str) for id_val in ranked_ids_data):
+                        ranked_ids = ranked_ids_data
+                    else:
+                        print(f"[INFO_AGENT_LLM_ERROR] LLM output was not a list of strings: {ranked_ids_data}")
+                        raise ValueError("LLM output not in expected list of strings format.")
+
+                except (json.JSONDecodeError, ValueError) as e:
+                    print(f"[INFO_AGENT_LLM_ERROR] Parsing LLM re-ranking response: {e}. LLM Raw Output: '{llm_output_content}'")
+                    return attractions_list 
+                
+                self.llm_rerank_cache[cache_key] = ranked_ids
+                print(f"[INFO_AGENT_LLM] Cached LLM re-ranking for key: {cache_key}")
+
+            except Exception as e:
+                print(f"[INFO_AGENT_LLM_ERROR] Calling LLM for re-ranking: {e}")
+                return attractions_list
+
+        id_to_attraction_map = {attr['id']: attr for attr in attractions_list}
+        ordered_attractions = []
+        seen_ids = set()
+        for id_ in ranked_ids:
+            if id_ in id_to_attraction_map and id_ not in seen_ids:
+                ordered_attractions.append(id_to_attraction_map[id_])
+                seen_ids.add(id_)
+        
+        for attr in attractions_list:
+            if attr.get('id') not in seen_ids: # Check if attr.get('id') exists
+                ordered_attractions.append(attr)
+        
+        print(f"[INFO_AGENT_LLM] Re-ranked list size: {len(ordered_attractions)}")
+        return ordered_attractions
 
     def city2geocode(self, city: str):
-        """
-        Convert city name to coordinates (latitude and longitude)
-        """
-        coordinates = self.gmaps.geocode(city)
-        if not coordinates:
+        try:
+            coordinates = self.gmaps.geocode(city)
+            if not coordinates: return None
+            return coordinates[0]['geometry']['location']
+        except Exception as e:
+            print(f"Error in city2geocode for '{city}': {e}")
             return None
-        return coordinates[0]['geometry']['location']
     
-    def get_attractions(self, lat: float, lng: float, number: int = 10,
-                  poi_type: str = None, sort_by: str = None, radius: int = 5000):
-        """
-        Find Points of Interest:
-        
-        Input:
-            - lat: Latitude
-            - lng: Longitude
-            - number: Number of results to return (default: 10)
-            - poi_type: Type of POI (e.g., "restaurant", "museum", "tourist_attraction")
-            - sort_by: Sorting method ('price' or 'rating')
-            - radius: Search radius in meters (default: 5000)
-            
-        Output:
-            List of POIs containing information such as description, rating, price level,
-            opening hours, address, etc.
-            
-        Example:
-            [
-                {
-                    "id": "ChIJN1t_tDeuEmsRUsoyG83frY4",
-                    "name": "Museum of Modern Art",
-                    "rating": 4.5,
-                    "price_level": 2,
-                    "opening_hours": ["Monday: 10:00 AM – 5:30 PM", "Tuesday: 10:00 AM – 5:30 PM"],
-                    "address": "151 3rd St, San Francisco, CA 94103",
-                    "location": {"lat": 37.7857, "lng": -122.4011},
-                    "category": "museum",
-                    "estimated_duration": "2 hours"
-                },
-                ...
-            ]
-        """
+    def get_attractions(self, lat: float, lng: float, user_prefs: dict, weather_summary: str = None,
+                        number: int = 20, 
+                        poi_type: str = "tourist_attraction", 
+                        sort_by: str = "rating", 
+                        radius: int = 10000):
         location = (lat, lng)
-        # Use Google Maps Nearby Search
-        results = self.gmaps.places_nearby(
-            location=location,
-            radius=radius,
-            type=poi_type,
-            language='en'
-        ).get('results', [])
+        initial_fetch_limit = max(number * 2, 40) 
+        
+        try:
+            results = self.gmaps.places_nearby(
+                location=location, radius=radius, type=poi_type, language='en'
+            ).get('results', [])
+        except Exception as e:
+            print(f"Error fetching places_nearby: {e}")
+            results = []
 
-        # Take only the first 'number' results
-        pois = []
-        for place in results[:number]:
+        initial_pois = []
+        print(f"[INFO_AGENT] Fetched {len(results)} raw places. Processing up to {initial_fetch_limit} for details.")
+        
+        # Define the fields to request from Place Details API
+        # 'types' and 'photos' are NOT valid for Place Details 'fields' parameter.
+        # 'types' are available from the places_nearby result.
+        # 'photos' (photo_references) are available from places_nearby result.
+        place_details_fields = [
+            'name', 'rating', 'price_level', 'opening_hours', 'formatted_address', 
+            'geometry/location', # Basic geometry is enough, not full viewport unless needed
+            'place_id', # Essential
+            'user_ratings_total', 'website', 'editorial_summary', 
+            'international_phone_number', 'permanently_closed', 'business_status'
+            # Valid photo field is 'photo', but it returns an array of photo objects.
+            # It's often better to get photo_references from nearby_search and construct URLs.
+        ]
+
+
+        for place in results[:initial_fetch_limit]: 
             pid = place.get('place_id')
-            details = self.poi_api.get_poi_details(
-                place_id=pid,
-                fields=['name', 'rating', 'price_level', 'opening_hours', 'formatted_address', 'geometry']
-            ).get('result', {})
+            if not pid: continue
+            try:
+                # Get types directly from the 'place' object from nearby search
+                place_types_list = place.get('types', ["unknown"])
+                primary_category_from_place = place_types_list[0] if place_types_list else "unknown"
 
-            # Extract location information
-            location = details.get('geometry', {}).get('location', {})
-            
-            # Extract category from the initial search results
-            category = ""
-            if place.get('types') and len(place.get('types')) > 0:
-                category = place.get('types')[0]
-            
-            # Estimate duration based on category and other factors
-            estimated_duration = self.estimate_duration(category, details)
+                # Get photo references directly from the 'place' object
+                photo_references_from_place = []
+                if place.get('photos'):
+                    for photo_info_nearby in place['photos'][:1]: # Get first photo reference
+                         if photo_info_nearby.get('photo_reference'):
+                            photo_references_from_place.append(photo_info_nearby['photo_reference'])
+                
+                # Now fetch details, excluding 'types' and 'photos' from fields
+                details_response = self.poi_api.get_poi_details(
+                    place_id=pid,
+                    fields=place_details_fields 
+                )
+                details = details_response.get('result', {})
+                if not details: continue
 
-            pois.append({
-                'id': pid,
-                'name': details.get('name'),
-                'rating': details.get('rating'),
-                'price_level': details.get('price_level'),
-                'opening_hours': details.get('opening_hours', {}).get('weekday_text'),
-                'address': details.get('formatted_address'),
-                'location': {
-                    'lat': location.get('lat'),
-                    'lng': location.get('lng')
-                },
-                'category': category,
-                'estimated_duration': estimated_duration
-            })
+                location_data = details.get('geometry', {}).get('location', {})
+                
+                description = details.get('editorial_summary', {}).get('overview', '')
+                if not description: description = details.get('name', 'No description available.')
+                
+                initial_pois.append({
+                    'id': pid, 
+                    'name': details.get('name'), 
+                    'rating': details.get('rating'),
+                    'user_ratings_total': details.get('user_ratings_total'),
+                    'price_level': details.get('price_level'),
+                    'opening_hours': details.get('opening_hours', {}).get('weekday_text'),
+                    'address': details.get('formatted_address'),
+                    'location': {'lat': location_data.get('lat'), 'lng': location_data.get('lng')},
+                    'category': primary_category_from_place, # Use category from nearby search result
+                    'types': place_types_list, # Full list of types from nearby search
+                    'estimated_duration': self.estimate_duration(primary_category_from_place, details), # Pass category from nearby
+                    'website': details.get('website'), 
+                    'description': description,
+                    'photo_references': photo_references_from_place # Use photo_references from nearby
+                })
+            except Exception as e:
+                print(f"Error fetching or processing details for place_id {pid}: {e}")
+                # import traceback # For more detailed error logging if needed
+                # traceback.print_exc()
+                continue
+        
+        print(f"[INFO_AGENT] Processed details for {len(initial_pois)} POIs.")
+        if not initial_pois:
+            return []
 
-        # Sort results
         if sort_by == 'price':
-            pois.sort(key=lambda x: x.get('price_level') or 0)
+            initial_pois.sort(key=lambda x: (x.get('price_level') is None, x.get('price_level', float('inf'))))
         elif sort_by == 'rating':
-            pois.sort(key=lambda x: x.get('rating') or 0, reverse=True)
-        return pois
+            initial_pois.sort(key=lambda x: (x.get('rating') is None, -(x.get('rating', 0.0))))
+
+        if user_prefs and self.llm:
+            print(f"[INFO_AGENT] Re-ranking {len(initial_pois)} attractions with LLM.")
+            llm_ranked_pois = self._rerank_attractions_with_llm(initial_pois, user_prefs, weather_summary)
+            return llm_ranked_pois[:number] 
+        else:
+            print(f"[INFO_AGENT] Skipping LLM re-ranking. Returning top {number} from initial sort.")
+            return initial_pois[:number]
 
     def estimate_duration(self, category, details):
         """
@@ -546,6 +661,43 @@ class InformationAgent:
             print(f"Error in search_car_rentals: {str(e)}")
             return self._get_mock_car_data(top_n)
             
+    def test_car_rental_service(self):
+        """
+        Test function for the car rental service using the search_car_rentals method.
+        This function tests the car rental functionality with sample data for Los Angeles.
+        """
+        from datetime import datetime, timedelta
+        import os
+        
+        print("=== 测试租车服务 ===")
+        try:
+            # Test parameters
+            location = "Los Angeles"
+            pickup_date = datetime.now().strftime("%Y-%m-%d")
+            dropoff_date = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
+            driver_age = 30
+
+            # Call the search_car_rentals method
+            cars = self.search_car_rentals(
+                location=location,
+                start_date=pickup_date,
+                end_date=dropoff_date,
+                driver_age=driver_age,
+                top_n=10
+            )
+            
+            print("搜索结果：")
+            if not cars:
+                print("无可用车辆或API未返回数据。")
+            for i, car in enumerate(cars, 1):
+                print(f"\n选项 {i}:")
+                print(f"车型: {car.get('car_model', 'N/A')}")
+                print(f"价格: {car.get('price', 'N/A')} {car.get('currency', 'USD')}")
+                print(f"供应商: {car.get('supplier_name', 'N/A')}")
+                print(f"取车地点: {car.get('pickup_location_name', 'N/A')}")
+        except Exception as e:
+            print(f"测试出错: {str(e)}")
+            
     # you could delete this function if the car rental service is working
     def _get_mock_car_data(self, top_n: int = 5):
         
@@ -701,4 +853,8 @@ class InformationAgent:
             if 'french_restaurant' in place['types']:
                 features.append('French')
         return ', '.join(features) if features else 'Cuisine'
+
+if __name__ == "__main__":
+    agent = InformationAgent()
+    agent.test_car_rental_service()
 
