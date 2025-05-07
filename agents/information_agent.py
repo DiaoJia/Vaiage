@@ -6,6 +6,8 @@ import googlemaps
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from datetime import datetime
+from dotenv import load_dotenv
+load_dotenv()
 
 # Add the parent directory to sys.path to allow imports from services
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -13,7 +15,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from services.maps_api import POIApi
 from services.weather_api import WeatherService
 from services.car_rental_api import CarRentalService
-
+from services.fuel_price_api import FuelPriceService
 
 def format_duration(seconds):
     if seconds is None:
@@ -49,6 +51,7 @@ class InformationAgent:
         self.poi_api = POIApi(self.maps_api_key)
         self.weather_service = WeatherService()
         self.car_rental_service = None
+        self.fuel_price_service = FuelPriceService(api_key=os.getenv("EIA_API_KEY"))
         if self.rapidapi_key and self.rapidapi_key != "YOUR_RAPIDAPI_KEY" and len(self.rapidapi_key) >= 30:
             try:
                 self.car_rental_service = CarRentalService(rapidapi_key=self.rapidapi_key)
@@ -656,7 +659,7 @@ class InformationAgent:
             
         except Exception as e:
             print(f"Error in search_car_rentals: {str(e)}")
-            return self._get_mock_car_data(top_n)
+            return None
             
             
     # you could delete this function if the car rental service is working
@@ -815,7 +818,25 @@ class InformationAgent:
                 features.append('French')
         return ', '.join(features) if features else 'Cuisine'
 
-if __name__ == "__main__":
-    agent = InformationAgent()
-    agent.test_car_rental_service()
+    def get_fuel_price(self, location: str, start_date: str, end_date: str):
+        """
+        Get fuel prices for a specific location and date range
+        
+        Args:
+            location (str): Location name
+            start_date (str): Start date (YYYY-MM-DD)
+            end_date (str): End date (YYYY-MM-DD)
+        
+        Returns:
+            dict: Dictionary containing fuel prices for each date in the range
+        """
+        try:
+            return self.fuel_price_service.get_gas_price(location, start_date, end_date)
+        except Exception as e:
+            print(f"Error getting fuel prices: {str(e)}")
+            return None
+        
+
+
+
 

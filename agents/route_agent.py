@@ -172,7 +172,7 @@ class RouteAgent:
         
         return itinerary
     
-    def estimate_budget(self, spots, user_prefs):
+    def estimate_budget(self, spots, user_prefs, car_info=None):
         """Estimate budget for the selected attractions"""
         # Base daily costs
         base_costs = {
@@ -223,11 +223,10 @@ class RouteAgent:
         total = base_total + attraction_cost
         
         # Add car rental if needed
-        if user_prefs.get("car_rental", False):
-            car_options = user_prefs["recommend_car"]
-            selected_car = car_options[0]
-            car_rental_cost = selected_car["price"] * int(num_days)
-            total += car_rental_cost
+        if user_prefs.get("should_rent_car", False):
+            selected_car = car_info[0]
+            drive_away_price = selected_car["price"]
+            total += drive_away_price
 
             # Calculate transport cost if car_rental is true
             route = self.get_optimal_route(spots)

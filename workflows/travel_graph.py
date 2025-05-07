@@ -4,7 +4,7 @@ from agents.recommend_agent import RecommendAgent
 from agents.strategy_agent import StrategyAgent
 from agents.route_agent import RouteAgent
 from agents.communication_agent import CommunicationAgent
-from datetime import datetime
+from datetime import datetime, timedelta
 from langchain.schema import AIMessage
 from workflows.evaluation import evaluate_state_with_llm
 
@@ -407,7 +407,7 @@ class TravelGraph:
             # Generate itinerary first
             days = int(self.state["user_info"].get("days", 1))  # Ensure days is an integer
             itinerary = self.route_agent.generate_itinerary(all_attractions, start_date, days)
-            
+            end_date = (start_date + timedelta(days=days)).strftime("%Y-%m-%d")
             # Extract the optimal route from the itinerary
             optimal_route = []
             for day in itinerary:
@@ -415,19 +415,19 @@ class TravelGraph:
             
             # Estimate budget
             
-            # if self.state["should_rent_car"]:
-            #     car_rental_cost = self.info_agent.search_car_rentals(
-            #         self.state["user_info"].get("city", ""),
-            #         start_date,
-            #         start_date,
-            #         self.state["user_info"]
-            #     )
+            if self.state["should_rent_car"]:
+                car_info = self.info_agent.search_car_rentals(
+                    self.state["user_info"].get("city", ""),
+                    start_date,
+                    end_date,
+                    driver_age=self.state["user_info"].get("age", 30)
+                )
                 
             
             budget = self.route_agent.estimate_budget(
                 all_attractions,
                 self.state["user_info"],
-                #car_rental_cost
+                car_info if car_info else None
             )
        
             # Store in state
