@@ -6,6 +6,7 @@ from agents.route_agent import RouteAgent
 from agents.communication_agent import CommunicationAgent
 from datetime import datetime
 from langchain.schema import AIMessage
+from workflows.evaluation import evaluate_state_with_llm
 
 import traceback
 # This is a simplified state graph manager since we're not using the actual langgraph library
@@ -340,7 +341,8 @@ class TravelGraph:
                 "ai_recommendation_generated": False,
                 "user_input_processed": False
             }
-    
+        
+    # After strategy step + self.state.get("should_rent_car", False) == True
     def _process_communication(self, response_message=None, **kwargs):
         """Process communication agent step"""
         if response_message and self.state["rental_post"]:
@@ -412,14 +414,22 @@ class TravelGraph:
                 optimal_route.extend(day["spots"])
             
             # Estimate budget
-            if self.state["user_info"].get("car_rental"):
-                self.state["user_info"]["recommend_car"] = self.info_agent._get_mock_car_data()
+            
+            # if self.state["should_rent_car"]:
+            #     car_rental_cost = self.info_agent.search_car_rentals(
+            #         self.state["user_info"].get("city", ""),
+            #         start_date,
+            #         start_date,
+            #         self.state["user_info"]
+            #     )
+                
             
             budget = self.route_agent.estimate_budget(
                 all_attractions,
-                self.state["user_info"]
+                self.state["user_info"],
+                #car_rental_cost
             )
-            
+       
             # Store in state
             self.state["itinerary"] = itinerary
             self.state["budget"] = budget
@@ -431,6 +441,9 @@ class TravelGraph:
                 self.state["should_rent_car"],
                 self.state["user_info"].get("name", "Traveler"),
             )
+
+            # evaluation test
+            evaluate_state_with_llm(self.state)
             
             return {
                 "next_step": "complete",
