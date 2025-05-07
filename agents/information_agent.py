@@ -38,7 +38,7 @@ def format_distance(meters):
     return f"{km:.1f} km / {miles:.1f} miles"
 
 class InformationAgent:
-    def __init__(self, maps_api_key=None, car_api_key=None, llm_model_name="gpt-4o-mini"):
+    def __init__(self, maps_api_key=None, car_api_key="101c26fdb2msh34c9d61906a2fd7p17131ajsn68eb8cc9ec7f", llm_model_name="gpt-4o-mini"):
         self.maps_api_key = maps_api_key or os.getenv("MAPS_API_KEY")
         self.rapidapi_key = car_api_key or os.getenv("RAPIDAPI_KEY")
         
@@ -643,9 +643,6 @@ class InformationAgent:
                 dropoff_time=dropoff_time,
                 currency_code="USD",
                 driver_age=driver_age,
-                pickup_city=location,
-                dropoff_city=location,
-                pickup_loc_name=location
             )
             
             # Filter by price if needed
@@ -661,42 +658,6 @@ class InformationAgent:
             print(f"Error in search_car_rentals: {str(e)}")
             return self._get_mock_car_data(top_n)
             
-    def test_car_rental_service(self):
-        """
-        Test function for the car rental service using the search_car_rentals method.
-        This function tests the car rental functionality with sample data for Los Angeles.
-        """
-        from datetime import datetime, timedelta
-        import os
-        
-        print("=== 测试租车服务 ===")
-        try:
-            # Test parameters
-            location = "Los Angeles"
-            pickup_date = datetime.now().strftime("%Y-%m-%d")
-            dropoff_date = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
-            driver_age = 30
-
-            # Call the search_car_rentals method
-            cars = self.search_car_rentals(
-                location=location,
-                start_date=pickup_date,
-                end_date=dropoff_date,
-                driver_age=driver_age,
-                top_n=10
-            )
-            
-            print("搜索结果：")
-            if not cars:
-                print("无可用车辆或API未返回数据。")
-            for i, car in enumerate(cars, 1):
-                print(f"\n选项 {i}:")
-                print(f"车型: {car.get('car_model', 'N/A')}")
-                print(f"价格: {car.get('price', 'N/A')} {car.get('currency', 'USD')}")
-                print(f"供应商: {car.get('supplier_name', 'N/A')}")
-                print(f"取车地点: {car.get('pickup_location_name', 'N/A')}")
-        except Exception as e:
-            print(f"测试出错: {str(e)}")
             
     # you could delete this function if the car rental service is working
     def _get_mock_car_data(self, top_n: int = 5):

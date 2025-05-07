@@ -1,9 +1,9 @@
-import requests
+import http.client
 import json
 import os
 from datetime import datetime, timedelta
 from urllib.parse import quote # For URL encoding location names
-from requests.models import PreparedRequest # For safely building URLs
+from urllib.parse import urlencode # For building query strings
 
 class CarRentalService:
     """
@@ -23,7 +23,6 @@ class CarRentalService:
 
         self.api_key = rapidapi_key
         self.api_host = "booking-com-api5.p.rapidapi.com"
-        self.base_url = f"https://{self.api_host}"
         self.endpoint = "/car/avaliable-car" # Note the API provider's spelling
         self.headers = {
             "X-RapidAPI-Key": self.api_key,
@@ -106,7 +105,6 @@ class CarRentalService:
             Returns None if the API call critically fails.
         """
         # --- Build API request parameters ---
-        url = self.base_url + self.endpoint
         querystring = {
             "pickup_latitude": pickup_lat, "pickup_longtitude": pickup_lon, # API's spelling
             "pickup_date": pickup_date, "pickup_time": pickup_time,      # HH:MM:SS
@@ -120,15 +118,27 @@ class CarRentalService:
         if pickup_loc_name is not None: querystring["pickup_location"] = pickup_loc_name
         if dropoff_loc_name is not None: querystring["dropoff_location"] = dropoff_loc_name
 
-        print(f"Preparing request URL: {url}")
-        print(f"Query parameters: {querystring}")
+        # Build the endpoint with query parameters
+        endpoint_with_params = f"{self.endpoint}?{urlencode(querystring)}"
+        print(f"Preparing request: {endpoint_with_params}")
 
         try:
-            # --- Send API request ---
-            response = requests.get(url, headers=self.headers, params=querystring, timeout=45)
-            response.raise_for_status()
-            print(f"API request successful (status code: {response.status_code})")
-            raw_data = response.json()
+            # --- Send API request using http.client ---
+            conn = http.client.HTTPSConnection(self.api_host)
+            conn.request("GET", endpoint_with_params, headers=self.headers)
+            response = conn.getresponse()
+            print(f"API request status: {response.status}")
+            
+            if response.status != 200:
+                print(f"Error: API returned status code {response.status}")
+                return None
+                
+            data = response.read()
+            conn.close()
+            
+            # Parse JSON response
+            raw_data = json.loads(data.decode('utf-8'))
+            print("API response successfully parsed")
 
             # --- Process, sort, limit ---
             processed_data = self._process_response(raw_data)
@@ -137,8 +147,6 @@ class CarRentalService:
             return final_results # Return the final results list
 
         # --- Error handling ---
-        # (error handling logic remains unchanged)
-        except requests.exceptions.Timeout as e: print(f"Error: Request timed out - {e}"); return None
-        except requests.exceptions.RequestException as e: print(f"Error: Network or request issue - {e}"); return None
-        except json.JSONDecodeError as e: print(f"Error: Failed to parse JSON response - {e}"); print(f"Received raw response text (first 500 chars): {response.text[:500]}"); return None
+        except http.client.HTTPException as e: print(f"Error: HTTP connection issue - {e}"); return None
+        except json.JSONDecodeError as e: print(f"Error: Failed to parse JSON response - {e}"); print(f"Received raw response text (first 500 chars): {data.decode('utf-8')[:500] if 'data' in locals() else 'No data'}"); return None
         except Exception as e: print(f"Unexpected error occurred: {e}"); return None
