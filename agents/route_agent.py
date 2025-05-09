@@ -222,11 +222,12 @@ class RouteAgent:
         # Calculate total
         total = base_total + attraction_cost
         
-        # Add car rental if needed
+        car_rental_cost = 0
+        fuel_cost = 0
         if user_prefs.get("should_rent_car", False):
             selected_car = car_info[0]
-            drive_away_price = selected_car["price"]
-            total += drive_away_price
+            car_rental_cost = selected_car["price"]
+            total += car_rental_cost
 
             # Calculate transport cost if car_rental is true
             route = self.get_optimal_route(spots)
@@ -260,14 +261,13 @@ class RouteAgent:
         
         # Return detailed budget
         return {
-            "total": total,
+            "total": round(total, 2),
             "accommodation": base_costs[budget_level]["accommodation"] * int(num_days) * int(num_people),
             "food": base_costs[budget_level]["food"] * int(num_days) * int(num_people),
             "transport": base_costs[budget_level]["transport"] * int(num_days) * int(num_people),
             "attractions": attraction_cost,
-            "car_rental": car_rental_cost if user_prefs.get("car_rental", False) else 0,
-            "fuel_cost": fuel_cost if user_prefs.get("car_rental", False) else 0 ,
-
+            "car_rental": round(car_rental_cost, 2),
+            "fuel_cost": round(fuel_cost, 2),
         }
     
     # budget估算为什么全部放在route_agent里？是否应该强调交通成本？
