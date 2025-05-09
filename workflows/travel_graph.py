@@ -284,7 +284,8 @@ class TravelGraph:
             ai_recommendation = self.strategy_agent.get_ai_recommendation(
                 self.state["user_info"],
                 selected_attractions,
-                total_days
+                total_days,
+                # self.state["user_info"].get("name", )
             )
             
             next_step = "communication" if should_rent_car else "route"
@@ -407,7 +408,12 @@ class TravelGraph:
             # Generate itinerary first
             days = int(self.state["user_info"].get("days", 1))  # Ensure days is an integer
             itinerary = self.route_agent.generate_itinerary(all_attractions, start_date, days)
-            end_date = (start_date + timedelta(days=days)).strftime("%Y-%m-%d")
+            # Fix: convert start_date to datetime if it's a string
+            if isinstance(start_date, str):
+                start_date_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            else:
+                start_date_dt = start_date
+            end_date = (start_date_dt + timedelta(days=days)).strftime("%Y-%m-%d")
             # Extract the optimal route from the itinerary
             optimal_route = []
             for day in itinerary:

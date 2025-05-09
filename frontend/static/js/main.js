@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let map;
     let markersLayer = L.layerGroup();  // Initialize markers layer
     try {
-        map = L.map('map').setView([0, 0], 2); // Default to Paris
+        map = L.map('map').setView([20, 0], 2); // Default to World view
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap> contributors',
             maxZoom: 19
@@ -524,23 +524,20 @@ document.addEventListener('DOMContentLoaded', function() {
         const budgetDiv = document.getElementById('budget-container');
         if (!budgetDiv || !budget) return;
         budgetDiv.innerHTML = `
-            <h5 class="mb-3">Budget Estimate</h5>
-            <div class="card">
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-6">
-                            <p class="mb-1"><strong>Total:</strong> $${budget.total}</p>
-                            <p class="mb-1"><strong>Accommodation:</strong> $${budget.accommodation}</p>
-                            <p class="mb-1"><strong>Food:</strong> $${budget.food}</p>
-                        </div>
-                        <div class="col-6">
-                            <p class="mb-1"><strong>Transport:</strong> $${budget.transport}</p>
-                            <p class="mb-1"><strong>Attractions:</strong> $${budget.attractions}</p>
-                            ${budget.car_rental ? `<p class="mb-1"><strong>Car Rental:</strong> $${budget.car_rental}</p>` : ''}
-                        </div>
-                    </div>
-                </div>
+        <h5 class="mb-3">Budget Estimate</h5>
+        <div class="row">
+            <div class="col-md-6">
+                <p class="mb-1"><strong>Total:</strong> $${Number(budget.total).toFixed(2)}</p>
+                <p class="mb-1"><strong>Accommodation:</strong> $${Number(budget.accommodation).toFixed(2)}</p>
+                <p class="mb-1"><strong>Food:</strong> $${Number(budget.food).toFixed(2)}</p>
             </div>
+            <div class="col-md-6">
+                <p class="mb-1"><strong>Transport:</strong> $${Number(budget.transport).toFixed(2)}</p>
+                <p class="mb-1"><strong>Attractions:</strong> $${Number(budget.attractions).toFixed(2)}</p>
+                ${budget.car_rental ? `<p class="mb-1"><strong>Car Rental:</strong> $${Number(budget.car_rental).toFixed(2)}</p>` : ''}
+                ${budget.fuel_cost ? `<p class="mb-1"><strong>Fuel Cost:</strong> $${Number(budget.fuel_cost).toFixed(2)}</p>` : ''}
+            </div>
+        </div>
         `;
     }
     
@@ -587,18 +584,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 };
                 
                 // Add initial welcome message
-                addChatMessage(`
-                    Welcome to your Travel AI Assistant! Tell me your name, and I'll help you plan your perfect trip. Let's start by gathering some information:
-                    <ul>
-                        <li>Which city would you like to visit?</li>
-                        <li>How many days will you stay?</li>
-                        <li>What's your budget (low, medium, high)?</li>
-                        <li>How many people are traveling?</li>
-                        <li>Are you traveling with children, pets, or have any special requirements?</li>
-                        <li>What type of activities do you enjoy (e.g., adventure, relaxation, culture)?</li>
-                        <li>What's your health condition?</li>
-                    </ul>
-                `, 'assistant');
+                addChatMessage(
+`Welcome to your Travel AI Assistant! Tell me your name, and I'll help you plan your perfect trip. Let's start by gathering some information:
+<ul>
+  <li>Which city would you like to visit?</li>
+  <li>How many days will you stay?</li>
+  <li>What's your budget (low, medium, high)?</li>
+  <li>How many people are traveling?</li>
+  <li>Are you traveling with children, pets, or have any special requirements?</li>
+  <li>What type of activities do you enjoy (e.g., adventure, relaxation, culture)?</li>
+  <li>What's your health condition?</li>
+</ul>
+`, 'assistant');
             })
             .catch(error => {
                 console.error('Error resetting conversation:', error);

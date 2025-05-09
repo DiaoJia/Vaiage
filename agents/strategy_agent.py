@@ -104,11 +104,12 @@ class StrategyAgent:
         
         return False
     
-    def get_ai_recommendation(self, user_prefs, selected_spots, total_days) -> Generator:
+    def get_ai_recommendation(self, user_prefs, selected_spots, total_days, user_name=None) -> Generator:
         """Get AI recommendation about the overall trip plan"""
         print(f"[DEBUG] Received user_prefs in get_ai_recommendation: {user_prefs}")  # Debug log
         
         # Create prompt for the LLM
+        name = user_name if user_name else "Traveler"
         spot_names = [spot["name"] for spot in selected_spots]
         days = total_days
         
@@ -118,13 +119,14 @@ class StrategyAgent:
         health_prefs = user_prefs.get('health', 'good')
         budget = user_prefs.get('budget', 'medium')
         hobbies = user_prefs.get('hobbies', '')
+        name = user_prefs.get('name', name)
         
         prompt = f"""
-        A tourist is planning a {days}-day trip with the following attractions:
+        {name} is planning a {days}-day trip with the following attractions:
         {', '.join(spot_names)}
         
         Their specific preferences are:
-        - Number of people: {user_prefs.get('people', 1)}
+        - Number of people: {people}
         - Traveling with children: {'Yes' if has_kids else 'No'}
         - Health/Dietary requirements: {health_prefs}
         - Budget level: {budget}
@@ -139,7 +141,7 @@ class StrategyAgent:
         """
         
         messages = [
-            SystemMessage(content="You are a travel advisor helping with trip logistics. Always base your recommendations on the exact preferences provided by the traveler."),
+            SystemMessage(content="You are a travel advisor helping with trip logistics. Always base your recommendations on the exact preferences provided by the traveler.(Call him/her by his/her name)"),
             HumanMessage(content=prompt)
         ]
         
