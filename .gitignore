@@ -1,1 +1,9 @@
 .env
+__pycache__/
+*.pyc
+.venv/
+flask_session/
+.gitignore
+test_*.py
+llm_score.txt
+
