@@ -284,7 +284,8 @@ class TravelGraph:
             ai_recommendation = self.strategy_agent.get_ai_recommendation(
                 self.state["user_info"],
                 selected_attractions,
-                total_days
+                total_days,
+                # self.state["user_info"].get("name", )
             )
             
             next_step = "communication" if should_rent_car else "route"
