@@ -167,7 +167,8 @@ def stream():
                 'itinerary': result.get('itinerary'),
                 'budget': result.get('budget'),
                 'response': result.get('response'),
-                'optimal_route': result.get('optimal_route')
+                'optimal_route': result.get('optimal_route'),
+                'rental_post': result.get('rental_post')
             }
             if step_name == 'strategy' and workflow.get_current_state().get('ai_recommendation_generated', False):
                 completion_data['next_step'] = 'communication' if workflow.get_current_state().get('should_rent_car', False) else 'route'

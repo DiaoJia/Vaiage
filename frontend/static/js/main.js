@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const chatForm = document.getElementById('chat-form');
     const userInput = document.getElementById('user-input');
     const chatContainer = document.getElementById('chat-container');
-    const itineraryContainer = document.getElementById('itinerary-container');
+    const itineraryContainer = document.getElementById('itinerary-container'); ///////////
     const recommendationsContainer = document.getElementById('recommendations-container');
     const loadingSpinner = document.getElementById('loading-spinner');
     const resetBtn = document.getElementById('reset-btn');
@@ -129,7 +129,8 @@ document.addEventListener('DOMContentLoaded', function() {
         budget: null,
         ai_recommendation_generated: false,
         user_input_processed: false,
-        session_id: null
+        session_id: null,
+        rental_post: null
     };
 
     // Handle form submission
@@ -262,6 +263,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         state.user_input_processed = Boolean(data.state.user_input_processed);
                         console.log('[DEBUG] Updated user_input_processed:', state.user_input_processed);
                     }
+                    if (data.state.rental_post) state.rental_post = data.state.rental_post;
                 }
                 // Update UI components
                 if (data.attractions) updateAttractions(data.attractions);
@@ -269,7 +271,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (data.itinerary) updateItinerary(data.itinerary);
                 if (data.budget) updateBudget(data.budget);
                 if (data.response) updateConfirmation(data.response);
-
+                if (data.rental_post) updateRentalPost(data.rental_post);
                 // 关键修改：如果进入 complete 阶段（即 route 阶段返回 next_step: 'complete'），直接渲染 itinerary 和 budget，不再发起新的请求
                 if (state.step === 'complete') {
                     // 已经在本次响应中渲染 itinerary 和 budget，无需再发 step=complete 请求
@@ -283,6 +285,22 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
 
                 console.log('[DEBUG] Final state:', state);
+
+                
+                if (state.step === 'strategy' && data.next_step === 'strategy') {
+                    const userInput = document.getElementById('user-input');
+                    if (userInput) {
+                        userInput.value = 'I am satisfied with your recommendation, let us go to next step';
+                        userInput.focus();
+                    }
+                }
+                if (prevStep === 'communication' && state.step === 'route') {
+                    const userInput = document.getElementById('user-input');
+                    if (userInput) {
+                        userInput.value = 'I am ready to go to next step';
+                        userInput.focus();
+                    }
+                }
             } else if (data.type === 'error') {
                 eventSource.close();
                 loadingSpinner.classList.add('d-none');
@@ -761,4 +779,29 @@ document.addEventListener('DOMContentLoaded', function() {
     window.updateMap = updateMap;
     window.selectAttraction = selectAttraction;
     window.removeAttraction = removeAttraction;
+
+    function updateRentalPost(rentalPost) {
+        // 获取页面上的展示区域
+        const container = document.getElementById('rental-post-container');
+        if (!container) return;
+
+        container.innerHTML = '';
+        if (!rentalPost) {
+            container.innerHTML = '<p class="text-center text-muted">Car rental post will appear here once generated.</p>';
+            return;
+        }
+
+        // 兼容对象和字符串
+        let content = '';
+        if (typeof rentalPost === 'object' && rentalPost.post_content) {
+            content = rentalPost.post_content;
+        } else if (typeof rentalPost === 'string') {
+            content = rentalPost;
+        } else {
+            content = JSON.stringify(rentalPost, null, 2);
+        }
+
+        // 支持 markdown 格式
+        container.innerHTML = `<div class="message-content">${marked.parse(content)}</div>`;
+    }
 });
