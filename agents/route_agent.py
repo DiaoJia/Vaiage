@@ -3,7 +3,7 @@ import math
 import json
 from datetime import datetime, timedelta
 import networkx as nx
-
+from utils import ask_openai, extract_number
 class RouteAgent:
     def __init__(self, api_key=None):
         """Initialize RouteAgent with optional API key for distance calculations"""
@@ -172,7 +172,7 @@ class RouteAgent:
         
         return itinerary
     
-    def estimate_budget(self, spots, user_prefs, car_info=None):
+    def estimate_budget(self, spots, user_prefs, should_rent_car=False,car_info=None, fuel_price=None):
         """Estimate budget for the selected attractions"""
         # Base daily costs
         base_costs = {
@@ -224,30 +224,46 @@ class RouteAgent:
         
         car_rental_cost = 0
         fuel_cost = 0
-        if user_prefs.get("should_rent_car", False):
-            selected_car = car_info[0]
-            car_rental_cost = selected_car["price"]
+        if should_rent_car:
+            ai_response = ask_openai(
+                prompt = f"""
+                here is the car info: {car_info}, and the budget: {budget_level},
+                please select the most suitable car for the user
+                important: just return the idx of the car in the car_info list,only return the idx(a number),no other words
+                """
+            )
+            print(f"[DEBUG] AI response: {ai_response}",type(ai_response["answer"]))   ## 需要修改，返回不合规
+            recommend_car = int(extract_number(ai_response["answer"]))
+            idx = recommend_car - 1 if recommend_car in range(1, len(car_info)+1) else 0
+            print(f"[DEBUG] Selected car idx: {idx}")
+            car_rental_cost = car_info[idx]["price"]
             total += car_rental_cost
+            print(f"[DEBUG] Car rental cost: {car_rental_cost}")
+
+
+
 
             # Calculate transport cost if car_rental is true
             route = self.get_optimal_route(spots)
+            print(f"[DEBUG] Optimal route: {route}")
+
+
             total_distance = 0
             for i in range(len(route)-1):
                 total_distance += self._calculate_distance(route[i], route[i+1])
-        
+           
+
+
             fuel_costs = {
                 "low": {
-                    "price_per_liter": 1.2,  # USD/liter
                     "fuel_efficiency": 7.0,   # liters/100km
                     "car_type": "Economy"
                 },
                 "medium": {
-                    "price_per_liter": 1.2,
                     "fuel_efficiency": 8.5,   # Slightly higher for mid-range cars
                     "car_type": "Mid-range"
                 },
                 "high": {
-                    "price_per_liter": 1.2,
                     "fuel_efficiency": 10.0,  # Higher for luxury cars
                     "car_type": "Luxury"
                 }
@@ -256,9 +272,9 @@ class RouteAgent:
             # Calculate fuel cost
             fuel_info = fuel_costs[budget_level]
             fuel_consumption = (total_distance * fuel_info["fuel_efficiency"]) / 100  # Total fuel consumption (liters)
-            fuel_cost = fuel_consumption * fuel_info["price_per_liter"]  # Total fuel cost
+            fuel_cost = fuel_consumption * fuel_price  # Total fuel cost
             total += fuel_cost
-        
+            print(f"[DEBUG] Fuel cost: {fuel_cost}")
         # Return detailed budget
         return {
             "total": round(total, 2),

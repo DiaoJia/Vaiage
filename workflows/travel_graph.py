@@ -245,17 +245,17 @@ class TravelGraph:
         
         # Check if this is a confirm selection request
         is_confirm_selection = kwargs.get('user_input', '').lower() == 'here are my selected attractions'
-        print(f"[DEBUG] Is confirm selection: {is_confirm_selection}")
-        print(f"[DEBUG] Current ai_recommendation_generated: {self.state['ai_recommendation_generated']}")
+        print(f"[DEBUG] In _process_strategy, Is confirm selection: {is_confirm_selection}")
+        print(f"[DEBUG] In _process_strategy, Current ai_recommendation_generated: {self.state['ai_recommendation_generated']}")
         
-        # If recommendations haven't been generated yet and this is a confirm selection request
+        # If recommendations haven't been generated yet and this is a confirm selection request,first time entering this step
         if not self.state['ai_recommendation_generated'] and is_confirm_selection:
             print("[DEBUG] Generating recommendations for the first time (confirm selection)")
             
             # Update state flags BEFORE generating recommendations
             self.state['ai_recommendation_generated'] = True
             self.state['user_input_processed'] = True
-            print("[DEBUG] Set ai_recommendation_generated and user_input_processed to True")
+            print("[DEBUG] In _process_strategy, Set ai_recommendation_generated and user_input_processed to True")
             
             selected_attractions = self.state["selected_attractions"]
             total_days = self.state["user_info"].get("days", 1)
@@ -277,7 +277,7 @@ class TravelGraph:
                 self.state["user_info"].get("city", ""),
                 self.state["user_info"]
             )
-            
+            print(f"[DEBUG] In _process_strategy, Should rent car: {should_rent_car}")
             self.state["should_rent_car"] = should_rent_car
             
             # Get AI recommendation about the overall plan
@@ -288,15 +288,15 @@ class TravelGraph:
                 # self.state["user_info"].get("name", )
             )
             
-            next_step = "communication" if should_rent_car else "route"
-            print(f"[DEBUG] Next step will be: {next_step}")
+            #next_step = "communication" if should_rent_car else "route"
+            #print(f"[DEBUG] Next step will be: {next_step}")
             
             # Create a copy of the state to return
             state_copy = self.state.copy()
             print(f"[DEBUG] State to be returned: {state_copy}")
             
             return {
-                "next_step": next_step,
+                "next_step": "strategy",
                 "stream": ai_recommendation,
                 "remaining_hours": strategy_result["remaining_hours"],
                 "additional_attractions": strategy_result["additional_attractions"],
@@ -308,7 +308,7 @@ class TravelGraph:
         elif self.state['ai_recommendation_generated']:
             print("[DEBUG] Recommendations already generated, moving to next step")
             next_step = "communication" if self.state.get("should_rent_car", False) else "route"
-            print(f"[DEBUG] Moving to next step: {next_step}")
+            print(f"[DEBUG] Next step will be: {next_step}")
             
             # Create a generator that yields the transition message
             def transition_generator():
@@ -346,7 +346,7 @@ class TravelGraph:
     # After strategy step + self.state.get("should_rent_car", False) == True
     def _process_communication(self, response_message=None, **kwargs):
         """Process communication agent step"""
-        if response_message and self.state["rental_post"]:
+        if response_message and self.state["rental_post"]:  ## 这一步是做什么？？
             # Handle response to rental post
             reply = self.comm_agent.handle_rental_response(
                 self.state["rental_post"],
@@ -377,7 +377,7 @@ class TravelGraph:
             
             # Create a generator that yields the response message
             def response_generator():
-                yield AIMessage(content="I've created a car rental request post for you.")
+                yield AIMessage(content="we recommmend you to rent a car for your trip, I've created a car rental request post for you.Feel free to use it.")
             
             return {
                 "next_step": "route",  # Continue with route planning while waiting for responses
@@ -418,22 +418,26 @@ class TravelGraph:
             optimal_route = []
             for day in itinerary:
                 optimal_route.extend(day["spots"])
-            
+           
             # Estimate budget
-            
+
             if self.state["should_rent_car"]:
                 car_info = self.info_agent.search_car_rentals(
                     self.state["user_info"].get("city", ""),
                     start_date,
                     end_date,
                     driver_age=self.state["user_info"].get("age", 30)
-                )
-                
+                )   
+                fuel_price = self.info_agent.get_fuel_price(self.state["user_info"].get("city", ""))
+                if fuel_price and car_info:
+                    print(f"[DEBUG] Successfully got fuel price and car info, fuel_price: {fuel_price}, car_info: {car_info}")
             
             budget = self.route_agent.estimate_budget(
                 all_attractions,
                 self.state["user_info"],
-                car_info if car_info else None
+                self.state["should_rent_car"],
+                car_info if self.state["should_rent_car"] else None,
+                fuel_price if self.state["should_rent_car"] else None
             )
        
             # Store in state
