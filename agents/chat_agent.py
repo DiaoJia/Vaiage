@@ -8,7 +8,7 @@ class ChatAgent:
     def __init__(self, model_name="gpt-3.5-turbo"):
         """Initialize the ChatAgent with specified model"""
         self.model = ChatOpenAI(model_name=model_name, temperature=0.7, streaming=True)
-        self.required_fields = ["name", "city", "days", "budget", "people", "kids", "health", "hobbies"]
+        self.required_fields = ["name", "city", "days", "budget", "people", "kids", "health", "hobbies", "start_date"]
         self.conversation_history = []
         
     def _init_system_message(self):
@@ -47,6 +47,7 @@ class ChatAgent:
         Missing fields: {json.dumps([f for f in self.required_fields if not state.get(f)], ensure_ascii=False)}
         Please help the user complete the missing information in a natural way.
         Remember to acknowledge information that has already been provided.
+        Tell the user that they can write "not decided" for the start date if they don't have a specific date in mind.
         """))
         
         try:
@@ -91,6 +92,7 @@ class ChatAgent:
         For example, if the user says "without kids" or "no children", set "kids" to "no".
         If they mention "all adults", also set "kids" to "no".
         If they mention family with children, set "kids" to "yes".
+        The people field should be integer.
         Specifically, if the user gives a start date, set "start_date" in YYYY-MM-DD format string.Otherwise, set "start_date" to "not decided".
         Pay attention to negations and context. Don't just look for keywords, understand the meaning.
         

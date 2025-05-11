@@ -124,7 +124,12 @@ class TravelGraph:
         user_start_date = user_prefs.get("start_date", "not decided")
         user_days_str = user_prefs.get("days")
 
-        if user_start_date != "not decided" and user_days_str:
+        # Handle "not decided" case by setting start date to 7 days from now
+        if user_start_date == "not decided":
+            user_start_date = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+            user_prefs["start_date"] = user_start_date  # Update the state with the new start date
+
+        if user_days_str:
             try:
                 num_days = int(user_days_str)
                 weather_data_result = self.info_agent.get_weather(
@@ -147,7 +152,7 @@ class TravelGraph:
                 print(f"[ERROR] Exception fetching weather summary: {e}")
                 traceback.print_exc()
         else:
-            print("[DEBUG] Weather info not fetched (no start_date or days).")
+            print("[DEBUG] Weather info not fetched (no days).")
             
         # Get attractions - InfoAgent now handles LLM re-ranking internally
         print(f"[DEBUG] Calling info_agent.get_attractions for '{city}' with user_prefs and weather.")
@@ -285,11 +290,8 @@ class TravelGraph:
                 self.state["user_info"],
                 selected_attractions,
                 total_days,
-                # self.state["user_info"].get("name", )
+                should_rent_car=should_rent_car  # Pass the car rental decision to the AI
             )
-            
-            #next_step = "communication" if should_rent_car else "route"
-            #print(f"[DEBUG] Next step will be: {next_step}")
             
             # Create a copy of the state to return
             state_copy = self.state.copy()
@@ -307,6 +309,7 @@ class TravelGraph:
             }
         elif self.state['ai_recommendation_generated']:
             print("[DEBUG] Recommendations already generated, moving to next step")
+            # Only move to communication step if car rental is actually needed
             next_step = "communication" if self.state.get("should_rent_car", False) else "route"
             print(f"[DEBUG] Next step will be: {next_step}")
             
@@ -388,8 +391,8 @@ class TravelGraph:
     def _process_route(self, start_date=None, **kwargs):
         """Process route agent step"""
         try:
-            if not start_date:
-                start_date = kwargs.get("start_date", datetime.now().strftime("%Y-%m-%d"))  # Default to today's date
+            # Get start date from user preferences, fallback to provided start_date, then to current date
+            start_date = self.state["user_info"].get("start_date") or start_date or datetime.now().strftime("%Y-%m-%d")
             
             # Get all attractions (selected + additional)
             all_attractions = self.state["selected_attractions"] + self.state["additional_attractions"]
