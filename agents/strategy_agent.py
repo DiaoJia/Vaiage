@@ -120,7 +120,7 @@ class StrategyAgent:
         budget = user_prefs.get('budget', 'medium')
         hobbies = user_prefs.get('hobbies', '')
         name = user_prefs.get('name', name)
-        
+        should_rent_car = user_prefs.get('should_rent_car', False)
         prompt = f"""
         {name} is planning a {days}-day trip with the following attractions:
         {', '.join(spot_names)}
@@ -131,6 +131,7 @@ class StrategyAgent:
         - Health/Dietary requirements: {health_prefs}
         - Budget level: {budget}
         - Interests/Hobbies: {hobbies}
+        - should_rent_car: {should_rent_car}
         
         Based on these EXACT preferences, please provide recommendations:
         1. Would you recommend renting a car for this itinerary? Why or why not?
