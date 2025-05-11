@@ -21,14 +21,13 @@ class StrategyAgent:
 
         # If we have more than 4 hours left, suggest additional attractions
         # 是否改为 3h ？
-        additional_attractions = []
+        additional_attractions = []     
         if remaining_hours > 4:
             additional_attractions = self._suggest_additional_attractions(
                 selected_spots, 
                 all_attractions, 
                 remaining_hours
             )
-        
         return {
             "remaining_hours": remaining_hours,
             "additional_attractions": additional_attractions
@@ -56,19 +55,13 @@ class StrategyAgent:
         
         # Sort by duration (ascending)
         scored_attractions.sort(key=lambda x: x[1])
-        
         # Return attractions that fit within remaining time
         result = []
         total_duration = 0
         for attraction, duration in scored_attractions:
             if total_duration + duration <= remaining_hours:
                 result.append(attraction)
-                total_duration += duration
-            
-            # Stop once we've suggested 3 additional attractions
-            if len(result) >= 3:
-                break
-        
+                total_duration += duration  
         return result
     
     # 该租车判断逻辑是否合理？是否更应该考虑当地具体的交通情况？

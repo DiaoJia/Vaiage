@@ -290,7 +290,7 @@ class TravelGraph:
                 self.state["user_info"],
                 selected_attractions,
                 total_days,
-                should_rent_car=should_rent_car  # Pass the car rental decision to the AI
+                
             )
             
             # Create a copy of the state to return
@@ -397,7 +397,7 @@ class TravelGraph:
             # Get all attractions (selected + additional)
             all_attractions = self.state["selected_attractions"] + self.state["additional_attractions"]
             
-            print(f"[DEBUG] All attractions: {all_attractions}")
+            #print(f"[DEBUG] All attractions: {all_attractions}")
             
             if not all_attractions:
                 return {
