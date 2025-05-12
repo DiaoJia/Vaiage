@@ -5,6 +5,8 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from typing import Generator
 import utils
 import json
+import re
+
 class StrategyAgent:
     def __init__(self, model_name="gpt-3.5-turbo"):
         """Initialize StrategyAgent with AI model for planning"""
@@ -52,7 +54,9 @@ class StrategyAgent:
                 the order of the attractions should minimize the total travel distance.
                 result should be a list of attractions name.
                 The selected attractions must be in the result.
-                format:list:["name1","name2","name3"]
+                Do not use bold font.
+                Only return a plain Python list of attraction names, e.g. ["name1", "name2", "name3"]
+                
                 """
                 result = utils.ask_openai(prompt)
                 print(result)
@@ -62,9 +66,18 @@ class StrategyAgent:
                 with open("result of strategy.txt", "r") as f:
                     data = json.load(f)
                     answer = data['answer']
-                    lines = answer.split('\n')
-                    attractions_name = [line.strip().split(". ")[1] for line in lines if line.strip() and ". " in line and not any(x in line.strip().split(". ")[1] for x in ["Enjoy", "Format", "This"])]
-                    #print("景点列表:", attractions_name)
+                    # 用正则提取第一个中括号及其内容
+                    match = re.search(r'\[.*\]', answer, re.DOTALL)
+                    if match:
+                        try:
+                            attractions_name = json.loads(match.group())
+                        except Exception as e:
+                            print("json.loads解析失败:", e)
+                            attractions_name = []
+                    else:
+                        print("未找到合法的列表格式")
+                        attractions_name = []
+                    print("景点列表:", attractions_name)
 
                 #检验合法性
                 valid = True
