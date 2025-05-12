@@ -245,37 +245,39 @@ class TravelGraph:
     
     def _process_strategy(self, **kwargs):
         """Process strategy agent step"""
-        print(f"[DEBUG] Entering _process_strategy with kwargs: {kwargs}")
-        print(f"[DEBUG] Current state before processing: {self.state}")
+#       print(f"[DEBUG] Entering _process_strategy with kwargs: {kwargs}")
+#       print(f"[DEBUG] Current state before processing: {self.state}")
         
         # Check if this is a confirm selection request
         is_confirm_selection = kwargs.get('user_input', '').lower() == 'here are my selected attractions'
-        print(f"[DEBUG] In _process_strategy, Is confirm selection: {is_confirm_selection}")
-        print(f"[DEBUG] In _process_strategy, Current ai_recommendation_generated: {self.state['ai_recommendation_generated']}")
+#       print(f"[DEBUG] In _process_strategy, Is confirm selection: {is_confirm_selection}")
+#       print(f"[DEBUG] In _process_strategy, Current ai_recommendation_generated: {self.state['ai_recommendation_generated']}")
         
         # If recommendations haven't been generated yet and this is a confirm selection request,first time entering this step
         if not self.state['ai_recommendation_generated'] and is_confirm_selection:
-            print("[DEBUG] Generating recommendations for the first time (confirm selection)")
+#            print("[DEBUG] Generating recommendations for the first time (confirm selection)")
             
             # Update state flags BEFORE generating recommendations
             self.state['ai_recommendation_generated'] = True
             self.state['user_input_processed'] = True
-            print("[DEBUG] In _process_strategy, Set ai_recommendation_generated and user_input_processed to True")
+#            print("[DEBUG] In _process_strategy, Set ai_recommendation_generated and user_input_processed to True")
             
             selected_attractions = self.state["selected_attractions"]
             total_days = self.state["user_info"].get("days", 1)
-            
-            print(f"[DEBUG] User info in _process_strategy before get_ai_recommendation: {self.state['user_info']}")
-            
+
+
+
+            ########### 已修改
             # Plan remaining time and suggest additional attractions
             strategy_result = self.strategy_agent.plan_remaining_time(
                 selected_attractions, 
                 total_days,
-                self.state["attractions"]
+                self.state["attractions"]  ## This should be the full list of attractions
             )
             
-            self.state["additional_attractions"] = strategy_result["additional_attractions"]
-            
+            self.state["attractions"] = strategy_result["additional_attractions"]  ## 现在这里的attractions 是经过筛选的,也是最终的attractions
+            #########################
+
             # Check if car rental is recommended
             should_rent_car = self.strategy_agent.should_rent_car(
                 selected_attractions, 
@@ -394,8 +396,8 @@ class TravelGraph:
             # Get start date from user preferences, fallback to provided start_date, then to current date
             start_date = self.state["user_info"].get("start_date") or start_date or datetime.now().strftime("%Y-%m-%d")
             
-            # Get all attractions (selected + additional)
-            all_attractions = self.state["selected_attractions"] + self.state["additional_attractions"]
+            
+            all_attractions = self.state["attractions"] ## 现在这里的attractions 是经过筛选的,也是最终的attractions
             
             #print(f"[DEBUG] All attractions: {all_attractions}")
             
@@ -410,7 +412,11 @@ class TravelGraph:
             
             # Generate itinerary first
             days = int(self.state["user_info"].get("days", 1))  # Ensure days is an integer
+
+            #########顺序应该已经调整成最优秀的状态，strategy 里面完成
             itinerary = self.route_agent.generate_itinerary(all_attractions, start_date, days)
+            
+            
             # Fix: convert start_date to datetime if it's a string
             if isinstance(start_date, str):
                 start_date_dt = datetime.strptime(start_date, "%Y-%m-%d")

@@ -11,7 +11,7 @@ dotenv.load_dotenv()
 # use openai to ask question to get information
 def ask_openai(
     prompt: str,
-    model: str = "gpt-3.5-turbo",
+    model: str = "gpt-4o",
     temperature: float = 0.7,
     max_tokens: int = 1000
 ) -> Optional[Dict[str, Any]]:
@@ -35,12 +35,6 @@ def ask_openai(
         
         return {
             "answer": answer,
-            "model": model,
-            "usage": {
-                "prompt_tokens": response.usage.prompt_tokens,
-                "completion_tokens": response.usage.completion_tokens,
-                "total_tokens": response.usage.total_tokens
-            }
         }
         
     except Exception as e:

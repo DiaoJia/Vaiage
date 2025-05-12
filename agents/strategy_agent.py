@@ -3,36 +3,89 @@ import random
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from typing import Generator
-
+import utils
+import json
 class StrategyAgent:
     def __init__(self, model_name="gpt-3.5-turbo"):
         """Initialize StrategyAgent with AI model for planning"""
         self.model = ChatOpenAI(model_name=model_name, temperature=0.7, streaming=True)
     
     def plan_remaining_time(self, selected_spots, total_days, all_attractions):
-        """Calculate remaining time and suggest additional attractions"""
-        # Calculate how much time selected attractions will take
-        total_hours_needed = sum([spot.get("estimated_duration", 2) for spot in selected_spots])
-        
-        # Assume 8 hours of activity per day
-        total_available_hours = int(total_days) * 8
-        remaining_hours = total_available_hours - total_hours_needed
-        
+        with open("input of strategy.txt", "w") as f: #for debug
+            json.dump({
+                "selected_spots": selected_spots,
+                "total_days": total_days,
+                "all_attractions": all_attractions
+            }, f, indent=4)
+        print("now in plan_remaining_time")
+        try:
+            """Calculate remaining time and suggest additional attractions"""
+            total_available_hours = int(total_days) * 8
+            selected = []
+            for spot in selected_spots:
+                selected.append({
+                    "id": spot["id"],
+                    "name": spot["name"],
+                    "estimated_duration": spot.get("estimated_duration", 2),
+                    "location": spot["location"]
+                })
+            all = []
+            for spot in all_attractions:
+                all.append({
+                    "id": spot["id"],
+                    "name": spot["name"],
+                    "estimated_duration": spot.get("estimated_duration", 2),
+                    "location": spot["location"]
+                })
+            name_to_all = {i["name"]:i for i in all_attractions}
+            max_try = 5
+            for i in range(max_try):
+                prompt = f"""
+                You are a travel advisor helping with trip logistics.
+                here are the selected attractions,you must add it in the list of attractions.
+                {selected}
+                here are the total days for the trip.
+                {total_days}
+                here are the remaining attractions.
+                {all}
+                please give me the best route to visit the attractions.don't duplicate the attractions.
+                the order of the attractions should minimize the total travel distance.
+                result should be a list of attractions name.
+                The selected attractions must be in the result.
+                format:list:["name1","name2","name3"]
+                """
+                result = utils.ask_openai(prompt)
+                print(result)
+                with open("result of strategy.txt", "w") as f: #for debug
+                    json.dump(result, f, indent=4)
+                attractions_name = []
+                with open("result of strategy.txt", "r") as f:
+                    data = json.load(f)
+                    answer = data['answer']
+                    lines = answer.split('\n')
+                    attractions_name = [line.strip().split(". ")[1] for line in lines if line.strip() and ". " in line and not any(x in line.strip().split(". ")[1] for x in ["Enjoy", "Format", "This"])]
+                    #print("景点列表:", attractions_name)
 
-        # If we have more than 4 hours left, suggest additional attractions
-        # 是否改为 3h ？
-        additional_attractions = []     
-        if remaining_hours > 4:
-            additional_attractions = self._suggest_additional_attractions(
-                selected_spots, 
-                all_attractions, 
-                remaining_hours
-            )
-        return {
-            "remaining_hours": remaining_hours,
-            "additional_attractions": additional_attractions
-        }
-    
+                #检验合法性
+                valid = True
+                for i in selected:
+                    if i["name"] not in attractions_name:
+                        print(f"selected {i['name']} not in attractions_name")
+                        valid = False
+                        break
+                if not valid:
+                    continue
+                if valid:
+                    additional_attractions = [name_to_all[i] for i in attractions_name if i in name_to_all.keys()]
+                    break
+            
+            return {
+                "remaining_hours": total_available_hours, #随意吧
+                "additional_attractions": additional_attractions #其实就是attractions
+            }
+        except Exception as e:
+            print("Error in plan_remaining_time:", e)
+            raise    
     def _suggest_additional_attractions(self, selected_spots, all_attractions, remaining_hours):
         """Suggest additional attractions based on remaining time"""
         # Get IDs of already selected spots
