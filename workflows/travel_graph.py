@@ -161,7 +161,7 @@ class TravelGraph:
             lng=city_coordinates["lng"],
             user_prefs=user_prefs, # Pass full user_prefs
             weather_summary=self.state.get("weather_summary"), # Pass fetched weather summary
-            number=15, # Desired number of top attractions after LLM ranking
+            number=20, # Desired number of top attractions after LLM ranking
             poi_type="tourist_attraction"
             # sort_by="rating" # Initial sort inside get_attractions before LLM
         )
@@ -272,10 +272,13 @@ class TravelGraph:
             strategy_result = self.strategy_agent.plan_remaining_time(
                 selected_attractions, 
                 total_days,
-                self.state["attractions"]  ## This should be the full list of attractions
+                self.state["attractions"],  ## This should be the full list of attractions
+                self.state["user_info"],    # Pass user_prefs
+                self.state.get("weather_summary") # Pass weather_summary
             )
             
             self.state["attractions"] = strategy_result["additional_attractions"]  ## 现在这里的attractions 是经过筛选的,也是最终的attractions
+            self.state["daily_plan"] = strategy_result.get("daily_plan", {}) # Store the daily plan
             #########################
 
             # Check if car rental is recommended
@@ -397,11 +400,12 @@ class TravelGraph:
             start_date = self.state["user_info"].get("start_date") or start_date or datetime.now().strftime("%Y-%m-%d")
             
             
-            all_attractions = self.state["attractions"] ## 现在这里的attractions 是经过筛选的,也是最终的attractions
+            all_attractions_objects = self.state["attractions"] ## This is the flat list of all planned attraction objects
+            daily_plan_name_dict = self.state.get("daily_plan") # This is {"day1": ["NameA"], ...}
             
             #print(f"[DEBUG] All attractions: {all_attractions}")
             
-            if not all_attractions:
+            if not all_attractions_objects:
                 return {
                     "next_step": "complete",
                     "response": "No attractions selected for the trip.",
@@ -413,9 +417,20 @@ class TravelGraph:
             # Generate itinerary first
             days = int(self.state["user_info"].get("days", 1))  # Ensure days is an integer
 
-            #########顺序应该已经调整成最优秀的状态，strategy 里面完成
-            itinerary = self.route_agent.generate_itinerary(all_attractions, start_date, days)
-            
+            itinerary = []
+            if daily_plan_name_dict and isinstance(daily_plan_name_dict, dict) and all_attractions_objects:
+                all_spots_map = {spot["name"]: spot for spot in all_attractions_objects if spot and "name" in spot}
+                itinerary = self.route_agent.format_daily_plan_to_itinerary(
+                    daily_plan_name_dict,
+                    all_spots_map,
+                    start_date 
+                )
+            else:
+                print("[ERROR] Could not generate itinerary: daily_plan_name_dict or all_attractions_objects missing/invalid.")
+                # Fallback: Potentially use the old generate_itinerary if it was kept and makes sense
+                # For now, itinerary remains empty, leading to a response with no itinerary.
+                # self.state["itinerary"] will be empty, and confirmation will reflect that.
+
             
             # Fix: convert start_date to datetime if it's a string
             if isinstance(start_date, str):
@@ -425,8 +440,9 @@ class TravelGraph:
             end_date = (start_date_dt + timedelta(days=days)).strftime("%Y-%m-%d")
             # Extract the optimal route from the itinerary
             optimal_route = []
-            for day in itinerary:
-                optimal_route.extend(day["spots"])
+            if itinerary:
+                for day_plan_item in itinerary: # Iterate through list of day plans
+                    optimal_route.extend(day_plan_item.get("spots", []))
            
             # Estimate budget
 
@@ -442,7 +458,7 @@ class TravelGraph:
                     print(f"[DEBUG] Successfully got fuel price and car info, fuel_price: {fuel_price}, car_info: {car_info}")
             
             budget = self.route_agent.estimate_budget(
-                all_attractions,
+                all_attractions_objects,
                 self.state["user_info"],
                 self.state["should_rent_car"],
                 car_info if self.state["should_rent_car"] else None,

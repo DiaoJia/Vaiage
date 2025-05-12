@@ -4,11 +4,95 @@ import json
 from datetime import datetime, timedelta
 import networkx as nx
 from utils import ask_openai, extract_number
+import re
+import sys
+import os
+
+# Add the parent directory to sys.path to allow imports from services
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from agents.information_agent import InformationAgent
+
 class RouteAgent:
     def __init__(self, api_key=None):
         """Initialize RouteAgent with optional API key for distance calculations"""
         self.api_key = api_key
         self.distances_cache = {}
+        self.info_agent = None
+        try:
+            self.info_agent = InformationAgent()
+        except Exception as e:
+            print(f"Error initializing InformationAgent in RouteAgent: {e}")
+    
+    def optimize_daily_route(self, attractions_for_day):
+        """
+        Optimize the order of attractions for a single day using the InformationAgent's plan_with_waypoints.
+        
+        Args:
+            attractions_for_day: List of attraction objects with location data
+            
+        Returns:
+            List of the same attractions in optimal travel order
+        """
+        if not attractions_for_day or len(attractions_for_day) <= 1:
+            return attractions_for_day  # No optimization needed for 0 or 1 attraction
+        
+        # Check if we can use the InformationAgent
+        if not self.info_agent:
+            print("InformationAgent not available. Using fallback TSP solution.")
+            return self.get_optimal_route(attractions_for_day)
+            
+        try:
+            # Extract first attraction as starting point
+            origin = attractions_for_day[0]
+            
+            # Extract last attraction as destination (complete the loop back to start for simplicity)
+            destination = attractions_for_day[0]
+            
+            # The rest are waypoints
+            waypoints = []
+            for attraction in attractions_for_day[1:]:
+                if "location" in attraction and "lat" in attraction["location"] and "lng" in attraction["location"]:
+                    waypoint_location = f"{attraction['location']['lat']},{attraction['location']['lng']}"
+                    waypoints.append(waypoint_location)
+                else:
+                    print(f"Warning: Attraction {attraction.get('name', 'unknown')} missing location data")
+
+            # Prepare origin and destination strings
+            if "location" in origin and "lat" in origin["location"] and "lng" in origin["location"]:
+                origin_location = f"{origin['location']['lat']},{origin['location']['lng']}"
+                destination_location = origin_location  # Loop back to start
+            else:
+                print(f"Warning: Origin attraction {origin.get('name', 'unknown')} missing location data")
+                return attractions_for_day  # Can't optimize without location data
+
+            # Call plan_with_waypoints
+            optimized_route_data = self.info_agent.plan_with_waypoints(
+                origin=origin_location,
+                destination=destination_location,
+                waypoints=waypoints,
+                mode='driving'
+            )
+            
+            if not optimized_route_data:
+                print("Failed to get optimized route. Using fallback TSP solution.")
+                return self.get_optimal_route(attractions_for_day)
+            
+            # Extract the optimized waypoint order
+            waypoint_indices = optimized_route_data.get('waypoint_original_indices', [])
+            
+            # Create the optimized list of attractions
+            optimized_attractions = [origin]  # Start with origin
+            
+            # Add waypoints in optimized order
+            for idx in waypoint_indices:
+                optimized_attractions.append(attractions_for_day[idx + 1])  # +1 because we excluded origin
+                
+            return optimized_attractions
+        
+        except Exception as e:
+            print(f"Error optimizing daily route: {e}")
+            # Fallback to internal TSP solver
+            return self.get_optimal_route(attractions_for_day)
     
     def get_optimal_route(self, spots, start_point=None):
         """Calculate optimal route between selected attractions"""
@@ -119,59 +203,70 @@ class RouteAgent:
         # Return spots in calculated order
         return [spots[i] for i in tour]
     
-    def generate_itinerary(self, ordered_spots, start_date, num_days):
-        """Generate daily itinerary based on ordered spots"""
+    def format_daily_plan_to_itinerary(self, daily_plan_name_dict, all_spots_object_map, start_date_str):
+        """Generate daily itinerary based on a pre-defined daily plan of attraction names."""
         itinerary = []
-        current_date = datetime.strptime(start_date, "%Y-%m-%d")
-        current_day = 1
-        current_day_spots = []
-        remaining_hours = 8  # 8 hours of activity per day
-        
-        for spot in ordered_spots:
-            spot_duration = spot.get("estimated_duration", 2)
+        try:
+            current_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+        except ValueError:
+            print(f"[ERROR] Invalid start_date_str format: {start_date_str}. Expected YYYY-MM-DD.")
+            # Fallback to today if date is invalid, or handle error as preferred
+            current_date = datetime.now()
+            print(f"[WARN] Using current date {current_date.strftime('%Y-%m-%d')} as fallback.")
+
+        # Sort day keys numerically (e.g., "day1", "day2", ...)
+        sorted_day_keys = sorted(
+            [key for key in daily_plan_name_dict.keys() if key.startswith("day") and re.match(r"day\d+", key)],
+            key=lambda x: int(re.findall(r'\d+', x)[0])
+        )
+
+        for day_key in sorted_day_keys:
+            day_number = int(re.findall(r'\d+', day_key)[0])
+            spot_names_for_day = daily_plan_name_dict.get(day_key, [])
             
-            # If this spot doesn't fit in the current day, move to next day
-            if spot_duration > remaining_hours:
-                # Save current day's itinerary
-                if current_day_spots:
-                    itinerary.append({
-                        "day": current_day,
-                        "date": current_date.strftime("%Y-%m-%d"),
-                        "spots": current_day_spots
-                    })
+            current_day_spot_objects_raw = []
+            for name in spot_names_for_day:
+                if name in all_spots_object_map:
+                    current_day_spot_objects_raw.append(all_spots_object_map[name])
+                else:
+                    print(f"[WARN] Attraction name '{name}' from daily plan (day {day_number}) not found in all_spots_object_map.")
+            
+            # Optimize the route for this day's attractions
+            if current_day_spot_objects_raw and len(current_day_spot_objects_raw) > 1:
+                print(f"Optimizing route for day {day_number} with {len(current_day_spot_objects_raw)} attractions...")
+                optimized_day_attractions = self.optimize_daily_route(current_day_spot_objects_raw)
+                print(f"Route optimization complete for day {day_number}")
+                current_day_spot_objects_raw = optimized_day_attractions
+            
+            current_day_spots_timed = []
+            # Use 8 hours as a guideline for sequential timing within the day
+            # The LLM was prompted to consider an 8-hour day, so the sum of durations should ideally be around that.
+            start_offset_hours = 0 # Hours from 9 AM, e.g., 0 means 9 AM
+
+            for spot_obj in current_day_spot_objects_raw:
+                spot_duration = spot_obj.get("estimated_duration", 2) # Default to 2 hours if not specified
                 
-                # Move to next day
-                current_day += 1
-                current_date += timedelta(days=1)
-                current_day_spots = []
-                remaining_hours = 8
+                spot_with_time = spot_obj.copy()
                 
-                # Check if we've exceeded the number of days
-                if current_day > num_days:
-                    break
-            
-            # Add spot to current day
-            spot_with_time = spot.copy()
-            hours_spent = remaining_hours - spot_duration
-            start_hour = int(9 + (8 - remaining_hours))  # Start at 9 AM
-            end_hour = int(start_hour + spot_duration)
-            
-            spot_with_time["start_time"] = f"{start_hour:02d}:00"
-            spot_with_time["end_time"] = f"{end_hour:02d}:00"
-            
-            current_day_spots.append(spot_with_time)
-            remaining_hours -= spot_duration
-        
-        # Add the last day if not empty
-        if current_day_spots:
+                # Calculate start and end times for the activity (e.g., from 9:00)
+                activity_start_hour = 9 + start_offset_hours
+                activity_end_hour = activity_start_hour + spot_duration
+                
+                spot_with_time["start_time"] = f"{int(activity_start_hour):02d}:00"
+                spot_with_time["end_time"] = f"{int(activity_end_hour):02d}:00"
+                current_day_spots_timed.append(spot_with_time)
+                
+                start_offset_hours += spot_duration # Next spot starts after this one
+
             itinerary.append({
-                "day": current_day,
+                "day": day_number,
                 "date": current_date.strftime("%Y-%m-%d"),
-                "spots": current_day_spots
+                "spots": current_day_spots_timed
             })
+            current_date += timedelta(days=1)
         
         return itinerary
-    
+
     def estimate_budget(self, spots, user_prefs, should_rent_car=False,car_info=None, fuel_price=None):
         """Estimate budget for the selected attractions"""
         # Base daily costs

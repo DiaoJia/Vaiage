@@ -200,7 +200,7 @@ class InformationAgent:
                         sort_by: str = "rating", 
                         radius: int = 10000):
         location = (lat, lng)
-        initial_fetch_limit = max(number * 2, 40) 
+        initial_fetch_limit = 30 # Fetch 30 to be ranked by LLM
         
         try:
             results = self.gmaps.places_nearby(

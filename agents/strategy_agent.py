@@ -12,92 +12,154 @@ class StrategyAgent:
         """Initialize StrategyAgent with AI model for planning"""
         self.model = ChatOpenAI(model_name=model_name, temperature=0.7, streaming=True)
     
-    def plan_remaining_time(self, selected_spots, total_days, all_attractions):
+    def plan_remaining_time(self, selected_spots, total_days, all_attractions, user_prefs, weather_summary):
         with open("input of strategy.txt", "w") as f: #for debug
             json.dump({
                 "selected_spots": selected_spots,
                 "total_days": total_days,
-                "all_attractions": all_attractions
+                "all_attractions": all_attractions,
+                "user_prefs": user_prefs,
+                "weather_summary": weather_summary
             }, f, indent=4)
         print("now in plan_remaining_time")
         try:
             """Calculate remaining time and suggest additional attractions"""
-            total_available_hours = int(total_days) * 8
-            selected = []
+            total_available_hours = int(total_days) * 8 # This seems to be unused if we get a full plan
+            selected_data = []
             for spot in selected_spots:
-                selected.append({
+                selected_data.append({
                     "id": spot["id"],
                     "name": spot["name"],
                     "estimated_duration": spot.get("estimated_duration", 2),
                     "location": spot["location"]
                 })
-            all = []
+            
+            all_attractions_data = []
             for spot in all_attractions:
-                all.append({
+                all_attractions_data.append({
                     "id": spot["id"],
                     "name": spot["name"],
                     "estimated_duration": spot.get("estimated_duration", 2),
                     "location": spot["location"]
                 })
-            name_to_all = {i["name"]:i for i in all_attractions}
+            name_to_all_map = {i["name"]:i for i in all_attractions} # Map name to full attraction object
+            
             max_try = 5
+            final_planned_attractions_names = []
+            daily_plan_raw = {}
+
+            user_prefs_str = json.dumps(user_prefs, indent=2, ensure_ascii=False)
+            weather_str = weather_summary if weather_summary else "No specific weather summary provided."
+
             for i in range(max_try):
                 prompt = f"""
                 You are a travel advisor helping with trip logistics.
-                here are the selected attractions,you must add it in the list of attractions.
-                {selected}
-                here are the total days for the trip.
-                {total_days}
-                here are the remaining attractions.
-                {all}
-                please give me the best route to visit the attractions.don't duplicate the attractions.
-                the order of the attractions should minimize the total travel distance.
-                result should be a list of attractions name.
-                The selected attractions must be in the result.
-                Do not use bold font.
-                Only return a plain Python list of attraction names, e.g. ["name1", "name2", "name3"]
-                
+                The user is planning a {total_days}-day trip.
+
+                User Preferences:
+                {user_prefs_str}
+
+                Weather Summary for the trip period:
+                {weather_str}
+
+                Here are the attractions they have pre-selected (must be included in the plan):
+                {selected_data}
+
+                Here is a list of all available attractions to choose from (including the pre-selected ones if they appear here too, do not duplicate any attractions):
+                {all_attractions_data}
+
+                Please create an optimized daily itinerary for the {total_days} days.
+                The plan should distribute the attractions across the days to minimize travel time and ensure a balanced schedule.
+                Consider the estimated duration of each attraction. Assume a travel day is about 8 hours.
+                The selected attractions MUST be included in your plan.
+                Consider user preferences (e.g., hobbies, pace, budget) and the weather summary when selecting and scheduling attractions. For example, if the weather is rainy, prioritize indoor activities. If the user likes history, include more historical sites.
+                Do not use bold font or any markdown.
+                Return the result as a JSON object where keys are "day1", "day2", ..., "dayN" and values are lists of attraction names for that day.
+                For example: {{\"day1\": ["Attraction A", "Attraction B"], "day2": ["Attraction C"]}}
+                Ensure the output is a valid JSON object only.
                 """
                 result = utils.ask_openai(prompt)
-                print(result)
-                with open("result of strategy.txt", "w") as f: #for debug
-                    json.dump(result, f, indent=4)
-                attractions_name = []
-                with open("result of strategy.txt", "r") as f:
-                    data = json.load(f)
-                    answer = data['answer']
-                    # 用正则提取第一个中括号及其内容
-                    match = re.search(r'\[.*\]', answer, re.DOTALL)
+                print(f"Attempt {i+1} - Raw AI Output: {result}") # Debug raw output
+                
+                if result and 'answer' in result:
+                    raw_answer = result['answer']
+                    # Try to extract JSON part if it's embedded in text
+                    match = re.search(r'\{.*\}', raw_answer, re.DOTALL)
                     if match:
+                        json_str = match.group(0)
                         try:
-                            attractions_name = json.loads(match.group())
-                        except Exception as e:
-                            print("json.loads解析失败:", e)
-                            attractions_name = []
+                            daily_plan_raw = json.loads(json_str)
+                            # Validate structure: dict with "dayX" keys and list of strings (names) values
+                            if not isinstance(daily_plan_raw, dict) or \
+                               not all(isinstance(k, str) and k.startswith("day") and \
+                                       isinstance(v, list) and all(isinstance(name, str) for name in v) \
+                                       for k, v in daily_plan_raw.items()):
+                                print(f"Invalid JSON structure or non-string item in day's list: {daily_plan_raw}")
+                                daily_plan_raw = {} # Reset if structure is wrong
+                                continue
+                            print(f"Successfully parsed daily plan: {daily_plan_raw}")
+                        except json.JSONDecodeError as e:
+                            print(f"JSON parsing failed on attempt {i+1}: {e}")
+                            print(f"Problematic JSON string: {json_str}")
+                            daily_plan_raw = {}
+                            continue # Try again if parsing fails
                     else:
-                        print("未找到合法的列表格式")
-                        attractions_name = []
-                    print("景点列表:", attractions_name)
-
-                #检验合法性
-                valid = True
-                for i in selected:
-                    if i["name"] not in attractions_name:
-                        print(f"selected {i['name']} not in attractions_name")
-                        valid = False
-                        break
-                if not valid:
+                        print(f"No JSON object found in AI response on attempt {i+1}: {raw_answer}")
+                        daily_plan_raw = {}
+                        continue
+                else:
+                    print(f"No answer from AI on attempt {i+1}")
+                    daily_plan_raw = {}
                     continue
-                if valid:
-                    additional_attractions = [name_to_all[i] for i in attractions_name if i in name_to_all.keys()]
-                    break
-            
+
+                #景点列表: attractions_name
+                current_plan_attraction_names = []
+                for day_key in sorted(daily_plan_raw.keys()): # Ensure consistent order for validation
+                    if isinstance(daily_plan_raw[day_key], list):
+                        current_plan_attraction_names.extend(daily_plan_raw[day_key])
+                
+                # Validation: Check if all selected spots are in the plan
+                valid_plan = True
+                for selected_spot_info in selected_data:
+                    if selected_spot_info["name"] not in current_plan_attraction_names:
+                        print(f"Validation Failed: Selected spot '{selected_spot_info['name']}' not in the generated plan {current_plan_attraction_names}.")
+                        valid_plan = False
+                        break
+                
+                if valid_plan:
+                    final_planned_attractions_names = current_plan_attraction_names
+                    print(f"Valid plan found: {daily_plan_raw}")
+                    break # Exit loop if a valid plan is found
+                else:
+                    print(f"Invalid plan on attempt {i+1}, retrying...")
+
+            if not final_planned_attractions_names: # If no valid plan after max_try
+                print("Failed to generate a valid plan after multiple attempts. Returning selected spots as fallback.")
+                # Fallback: use selected spots if planning fails, or handle error appropriately
+                additional_attractions_details = [spot for spot in selected_spots]
+            else:
+                # Map names back to full attraction details
+                additional_attractions_details = []
+                for name in final_planned_attractions_names:
+                    if name in name_to_all_map:
+                        additional_attractions_details.append(name_to_all_map[name])
+                    else:
+                        # Handle case where a planned attraction name might not be in our initial list (e.g. slight name mismatch from LLM)
+                        # For now, we'll just skip it, but ideally, we'd have fuzzy matching or a way to confirm
+                        print(f"Warning: Planned attraction '{name}' not found in the provided all_attractions list.")
+
+
+            # The function needs to return "additional_attractions" which is used later as the primary list of attractions.
+            # And "remaining_hours" which seems less critical if the AI does full daily planning.
             return {
-                "remaining_hours": total_available_hours, #随意吧
-                "additional_attractions": additional_attractions #其实就是attractions
+                "remaining_hours": total_available_hours, # This might need re-evaluation or can be a dummy value.
+                "additional_attractions": additional_attractions_details, # This should be the flat list of all planned attractions.
+                "daily_plan": daily_plan_raw # Optionally return the structured daily plan if needed elsewhere
             }
         except Exception as e:
-            print("Error in plan_remaining_time:", e)
+            print(f"Error in plan_remaining_time: {e}")
+            import traceback
+            traceback.print_exc()
             raise    
     def _suggest_additional_attractions(self, selected_spots, all_attractions, remaining_hours):
         """Suggest additional attractions based on remaining time"""
