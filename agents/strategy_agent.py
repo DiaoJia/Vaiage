@@ -8,7 +8,7 @@ import json
 import re
 
 class StrategyAgent:
-    def __init__(self, model_name="gpt-3.5-turbo"):
+    def __init__(self, model_name="gpt-4o"):
         """Initialize StrategyAgent with AI model for planning"""
         self.model = ChatOpenAI(model_name=model_name, temperature=0.7, streaming=True)
     
@@ -72,7 +72,16 @@ class StrategyAgent:
                 The plan should distribute the attractions across the days to minimize travel time and ensure a balanced schedule.
                 Consider the estimated duration of each attraction. Assume a travel day is about 8 hours.
                 The selected attractions MUST be included in your plan.
+                
+                Pay special attention to the user's preferences and specific needs:
+                - Adjust the number and types of attractions based on user's mobility issues, health conditions, or special requirements
+                - If traveling with children, include more family-friendly activities and allow for breaks
+                - For users with mobility issues, plan fewer attractions per day and minimize walking distances
+                - Match attraction selection closely with stated hobbies and interests
+                - Adapt to the user's budget level when suggesting attractions
+                
                 Consider user preferences (e.g., hobbies, pace, budget) and the weather summary when selecting and scheduling attractions. For example, if the weather is rainy, prioritize indoor activities. If the user likes history, include more historical sites.
+                After selecting all attractions, consider their locations when creating the daily schedule. Group attractions that are close to each other on the same day to minimize travel time.
                 Do not use bold font or any markdown.
                 Return the result as a JSON object where keys are "day1", "day2", ..., "dayN" and values are lists of attraction names for that day.
                 For example: {{\"day1\": ["Attraction A", "Attraction B"], "day2": ["Attraction C"]}}

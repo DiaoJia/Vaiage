@@ -40,7 +40,7 @@ def format_distance(meters):
     return f"{km:.1f} km / {miles:.1f} miles"
 
 class InformationAgent:
-    def __init__(self, maps_api_key=None, car_api_key="101c26fdb2msh34c9d61906a2fd7p17131ajsn68eb8cc9ec7f", llm_model_name="gpt-4o-mini"):
+    def __init__(self, maps_api_key=None, car_api_key="101c26fdb2msh34c9d61906a2fd7p17131ajsn68eb8cc9ec7f", llm_model_name="gpt-4o"):
         self.maps_api_key = maps_api_key or os.getenv("MAPS_API_KEY")
         self.rapidapi_key = car_api_key or os.getenv("RAPIDAPI_KEY")
         

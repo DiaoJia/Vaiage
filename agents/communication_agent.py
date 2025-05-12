@@ -2,7 +2,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 
 class CommunicationAgent:
-    def __init__(self, model_name="gpt-3.5-turbo"):
+    def __init__(self, model_name="gpt-4o"):
         """Initialize CommunicationAgent with AI model for communication"""
         self.model = ChatOpenAI(model_name=model_name, temperature=0.7)
     

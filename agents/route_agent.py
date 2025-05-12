@@ -335,20 +335,14 @@ class RouteAgent:
             total += car_rental_cost
             print(f"[DEBUG] Car rental cost: {car_rental_cost}")
 
-
-
-
             # Calculate transport cost if car_rental is true
             route = self.get_optimal_route(spots)
             print(f"[DEBUG] Optimal route: {route}")
-
 
             total_distance = 0
             for i in range(len(route)-1):
                 total_distance += self._calculate_distance(route[i], route[i+1])
            
-
-
             fuel_costs = {
                 "low": {
                     "fuel_efficiency": 7.0,   # liters/100km
@@ -367,6 +361,10 @@ class RouteAgent:
             # Calculate fuel cost
             fuel_info = fuel_costs[budget_level]
             fuel_consumption = (total_distance * fuel_info["fuel_efficiency"]) / 100  # Total fuel consumption (liters)
+            # Add check for None and use a default value if fuel_price is None
+            if fuel_price is None:
+                print("[WARN] No fuel price available, using default value of $3.50 per gallon")
+                fuel_price = 3.50  # Default price in USD per gallon
             fuel_cost = fuel_consumption * fuel_price  # Total fuel cost
             total += fuel_cost
             print(f"[DEBUG] Fuel cost: {fuel_cost}")

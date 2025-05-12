@@ -4,7 +4,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 class RecommendAgent:
-    def __init__(self, model_name="gpt-3.5-turbo"):
+    def __init__(self, model_name="gpt-4o"):
         """Initialize RecommendAgent with AI model for personalized recommendations"""
         self.model = ChatOpenAI(model_name=model_name, temperature=0.7)
         
@@ -78,12 +78,15 @@ class RecommendAgent:
         Attractions:
         {attractions_str}
         
-        Consider the following factors:
-        1. Match between user's hobbies and attraction categories
-        2. Physical accessibility based on user's health status
+        Consider the following factors with strong emphasis on user preferences:
+        1. Match between user's hobbies and attraction categories - this should be the PRIMARY factor in ranking
+        2. Physical accessibility based on user's health status - PRIORITIZE attractions that accommodate the user's health condition
         3. Suitability for children if the user is traveling with kids
         4. Budget constraints
+        5. Variety of attraction categories to provide a balanced experience
         
+        For users with health considerations, ensure attractions are accessible and not overly strenuous.
+        For users with specific hobbies, prioritize attractions that directly match these interests.
         
         Return a list of attraction IDs, ranked from most to least recommended, in this format:
         [
