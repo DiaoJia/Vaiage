@@ -267,7 +267,7 @@ class RouteAgent:
         
         return itinerary
 
-    def estimate_budget(self, spots, user_prefs, should_rent_car=False,car_info=None, fuel_price=None):
+    def estimate_budget(self, spots, user_prefs, should_rent_car=False, car_info=None, fuel_price=None):
         """Estimate budget for the selected attractions"""
         # Base daily costs
         base_costs = {
@@ -317,9 +317,12 @@ class RouteAgent:
         # Calculate total
         total = base_total + attraction_cost
         
+        # Initialize car rental and fuel costs to zero
         car_rental_cost = 0
         fuel_cost = 0
-        if should_rent_car:
+        
+        # Only calculate car rental and fuel costs if car rental is recommended
+        if should_rent_car and car_info:
             ai_response = ask_openai(
                 prompt = f"""
                 here is the car info: {car_info}, and the budget: {budget_level},
@@ -327,7 +330,7 @@ class RouteAgent:
                 important: just return the idx of the car in the car_info list,only return the idx(a number),no other words
                 """
             )
-            print(f"[DEBUG] AI response: {ai_response}",type(ai_response["answer"]))   ## 需要修改，返回不合规
+            print(f"[DEBUG] AI response: {ai_response}",type(ai_response["answer"]))
             recommend_car = int(extract_number(ai_response["answer"]))
             idx = recommend_car - 1 if recommend_car in range(1, len(car_info)+1) else 0
             print(f"[DEBUG] Selected car idx: {idx}")
@@ -368,6 +371,7 @@ class RouteAgent:
             fuel_cost = fuel_consumption * fuel_price  # Total fuel cost
             total += fuel_cost
             print(f"[DEBUG] Fuel cost: {fuel_cost}")
+        
         # Return detailed budget
         return {
             "total": round(total, 2),

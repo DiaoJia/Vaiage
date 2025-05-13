@@ -85,17 +85,19 @@ class CommunicationAgent:
     
     def generate_booking_confirmation(self, itinerary, budget_estimate, car_rental=None, user_name=None):
         """Generate booking confirmation message"""
-        itinerary_summary = f"{len(itinerary)} days, starting on {itinerary[0]['date']}"
-        attractions_count = sum(len(day['spots']) for day in itinerary)
+        itinerary_summary = f"{len(itinerary)} days, starting on {itinerary[0]['date'] if itinerary else 'N/A'}"
+        attractions_count = sum(len(day['spots']) for day in itinerary) if itinerary else 0
         name = user_name if user_name else "Traveler"
+        
+        # Only include car rental information if it's recommended
+        car_rental_prompt = f"\nCar rental: {'Yes' if car_rental else 'No'}" if car_rental else ""
         
         prompt = f"""
         Generate a friendly, comprehensive trip confirmation message to {name} with the following details:
         
         Itinerary: {itinerary_summary}
         Number of attractions: {attractions_count}
-        Estimated budget: ${budget_estimate['total']}
-        Car rental: {'Yes' if car_rental else 'No'}
+        Estimated budget: ${budget_estimate['total']}{car_rental_prompt}
         
         The message should:
         1. Confirm the booking is complete

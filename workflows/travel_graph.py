@@ -245,86 +245,106 @@ class TravelGraph:
     
     def _process_strategy(self, **kwargs):
         """Process strategy agent step"""
-#       print(f"[DEBUG] Entering _process_strategy with kwargs: {kwargs}")
-#       print(f"[DEBUG] Current state before processing: {self.state}")
+        # Check if this is a confirm selection request or a satisfaction confirmation
+        user_input_lower = kwargs.get('user_input', '').lower()
+        is_confirm_selection = user_input_lower == 'here are my selected attractions'
+        is_satisfaction_confirmation = 'satisfied with your recommendation' in user_input_lower
         
-        # Check if this is a confirm selection request
-        is_confirm_selection = kwargs.get('user_input', '').lower() == 'here are my selected attractions'
-#       print(f"[DEBUG] In _process_strategy, Is confirm selection: {is_confirm_selection}")
-#       print(f"[DEBUG] In _process_strategy, Current ai_recommendation_generated: {self.state['ai_recommendation_generated']}")
+        # Log what type of confirmation message we received
+        if is_confirm_selection:
+            print("[DEBUG] Received initial confirmation of selections")
+        elif is_satisfaction_confirmation:
+            print("[DEBUG] Received satisfaction confirmation message")
+        else:
+            print(f"[DEBUG] Received other input: '{user_input_lower}'")
         
-        # If recommendations haven't been generated yet and this is a confirm selection request,first time entering this step
-        if not self.state['ai_recommendation_generated'] and is_confirm_selection:
-#            print("[DEBUG] Generating recommendations for the first time (confirm selection)")
+        # Print the current state of should_rent_car for debugging
+        if 'should_rent_car' in self.state:
+            print(f"[DEBUG] Current should_rent_car value: {self.state['should_rent_car']}")
+        else:
+            print("[DEBUG] should_rent_car not yet set in state")
             
+        # If recommendations haven't been generated yet and this is the initial confirm selection
+        if not self.state['ai_recommendation_generated'] and is_confirm_selection:
             # Update state flags BEFORE generating recommendations
             self.state['ai_recommendation_generated'] = True
             self.state['user_input_processed'] = True
-#            print("[DEBUG] In _process_strategy, Set ai_recommendation_generated and user_input_processed to True")
             
             selected_attractions = self.state["selected_attractions"]
             total_days = self.state["user_info"].get("days", 1)
 
-
-
-            ########### 已修改
             # Plan remaining time and suggest additional attractions
             strategy_result = self.strategy_agent.plan_remaining_time(
-                selected_attractions, 
-                total_days,
-                self.state["attractions"],  ## This should be the full list of attractions
-                self.state["user_info"],    # Pass user_prefs
-                self.state.get("weather_summary") # Pass weather_summary
+                selected_spots=selected_attractions, 
+                total_days=total_days,
+                all_attractions=self.state["attractions"],  ## This should be the full list of attractions
+                user_prefs=self.state["user_info"],    # Pass user_prefs
+                weather_summary=self.state.get("weather_summary") # Pass weather_summary
             )
             
             self.state["attractions"] = strategy_result["additional_attractions"]  ## 现在这里的attractions 是经过筛选的,也是最终的attractions
             self.state["daily_plan"] = strategy_result.get("daily_plan", {}) # Store the daily plan
-            #########################
 
-            # Check if car rental is recommended
-            should_rent_car = self.strategy_agent.should_rent_car(
-                selected_attractions, 
-                self.state["user_info"].get("city", ""),
-                self.state["user_info"]
-            )
-            print(f"[DEBUG] In _process_strategy, Should rent car: {should_rent_car}")
-            self.state["should_rent_car"] = should_rent_car
+            # Initialize should_rent_car to False by default
+            self.state["should_rent_car"] = False
+            print("[DEBUG] Initialized should_rent_car to False")
             
             # Get AI recommendation about the overall plan
+            # This will also analyze the recommendation and update should_rent_car in user_prefs
             ai_recommendation = self.strategy_agent.get_ai_recommendation(
-                self.state["user_info"],
-                selected_attractions,
-                total_days,
-                
+                user_prefs=self.state["user_info"],
+                selected_spots=selected_attractions,
+                total_days=total_days,
             )
+            
+            # Get the should_rent_car value from user_prefs after AI recommendation analysis
+            # This value is set by extract_rental_recommendation in strategy_agent.py
+            ai_should_rent_car = self.state["user_info"].get("should_rent_car", False)
+            self.state["should_rent_car"] = ai_should_rent_car
+            
+            print(f"[CRITICAL] AI rental recommendation set should_rent_car to: {ai_should_rent_car}")
+            print(f"[DEBUG] Updated state should_rent_car value: {self.state['should_rent_car']}")
             
             # Create a copy of the state to return
             state_copy = self.state.copy()
-            print(f"[DEBUG] State to be returned: {state_copy}")
             
             return {
                 "next_step": "strategy",
                 "stream": ai_recommendation,
                 "remaining_hours": strategy_result["remaining_hours"],
                 "additional_attractions": strategy_result["additional_attractions"],
-                "should_rent_car": should_rent_car,
+                "should_rent_car": self.state["should_rent_car"],
                 "state": state_copy,
                 "ai_recommendation_generated": True,
                 "user_input_processed": True
             }
-        elif self.state['ai_recommendation_generated']:
-            print("[DEBUG] Recommendations already generated, moving to next step")
+        # Handle both cases: either we have already generated recommendations 
+        # or this is a satisfaction confirmation message
+        elif self.state['ai_recommendation_generated'] or is_satisfaction_confirmation:
+            print("[DEBUG] Recommendations already generated or satisfaction confirmed, moving to next step")
+            
+            # Check if this is a satisfaction confirmation message and we need to process it specially
+            if is_satisfaction_confirmation and not self.state['ai_recommendation_generated']:
+                print("[CRITICAL] Handling satisfaction confirmation without prior recommendation generation")
+                # This means user sent satisfaction message before going through normal flow
+                # We need to ensure should_rent_car is correctly set to false in this case
+                self.state["should_rent_car"] = False
+                print("[DEBUG] Set should_rent_car to False for satisfaction message without prior recommendation")
+            
             # Only move to communication step if car rental is actually needed
-            next_step = "communication" if self.state.get("should_rent_car", False) else "route"
-            print(f"[DEBUG] Next step will be: {next_step}")
+            should_rent = self.state.get("should_rent_car", False)
+            next_step = "communication" if should_rent else "route"
+            print(f"[CRITICAL] Decision point: should_rent_car = {should_rent}, next_step = {next_step}")
             
             # Create a generator that yields the transition message
             def transition_generator():
-                yield AIMessage(content="Moving to the next step...")
+                if next_step == "route":
+                    yield AIMessage(content="Moving to route planning...")
+                else:
+                    yield AIMessage(content="Moving to car rental options...")
             
             # Create a copy of the state to return
             state_copy = self.state.copy()
-            print(f"[DEBUG] State to be returned: {state_copy}")
             
             return {
                 "next_step": next_step,
@@ -350,11 +370,22 @@ class TravelGraph:
                 "ai_recommendation_generated": False,
                 "user_input_processed": False
             }
-        
+    
     # After strategy step + self.state.get("should_rent_car", False) == True
     def _process_communication(self, response_message=None, **kwargs):
         """Process communication agent step"""
-        if response_message and self.state["rental_post"]:  ## 这一步是做什么？？
+        # First check if car rental is actually recommended
+        if not self.state.get("should_rent_car", False):
+            # If car rental is NOT recommended, skip to route planning
+            def skip_rental_generator():
+                yield AIMessage(content="Moving to the route planning step...")
+                
+            return {
+                "next_step": "route",
+                "stream": skip_rental_generator(),
+            }
+            
+        if response_message and self.state.get("rental_post"):
             # Handle response to rental post
             reply = self.comm_agent.handle_rental_response(
                 self.state["rental_post"],
@@ -385,7 +416,7 @@ class TravelGraph:
             
             # Create a generator that yields the response message
             def response_generator():
-                yield AIMessage(content="we recommmend you to rent a car for your trip, I've created a car rental request post for you.Feel free to use it.")
+                yield AIMessage(content="We recommend renting a car for your trip. I've created a car rental request post for you. Feel free to use it.")
             
             return {
                 "next_step": "route",  # Continue with route planning while waiting for responses

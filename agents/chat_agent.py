@@ -8,7 +8,10 @@ class ChatAgent:
     def __init__(self, model_name="gpt-3.5-turbo"):
         """Initialize the ChatAgent with specified model"""
         self.model = ChatOpenAI(model_name=model_name, temperature=0.7, streaming=True)
+        # Define required fields (these must be filled)
         self.required_fields = ["name", "city", "days", "budget", "people", "kids", "health", "hobbies", "start_date"]
+        # Define all fields, including optional ones
+        self.all_fields = self.required_fields + ["specificRequirements"]
         self.conversation_history = []
         
     def _init_system_message(self):
@@ -16,6 +19,8 @@ class ChatAgent:
         return SystemMessage(content="""
         You are a helpful travel assistant. Your job is to collect information about the user's travel plans.
         Be friendly, conversational, and help the user plan their trip. Collect all necessary information.
+        Also pay attention to any specific requirements the traveler mentions, such as accessibility needs,
+        food restrictions, special interests, or any constraints that might affect their trip.
         """)
         
     def collect_info(self, user_input: str, state: dict = None) -> dict:
@@ -48,6 +53,7 @@ class ChatAgent:
         Please help the user complete the missing information in a natural way.
         Remember to acknowledge information that has already been provided.
         Tell the user that they can write "not decided" for the start date if they don't have a specific date in mind.
+        Also pay attention to any specific requirements they mention and reflect these in your responses.
         """))
         
         try:
@@ -88,20 +94,28 @@ class ChatAgent:
         system_prompt = f"""Extract the following travel information from the user's message and return JSON.
         Carefully analyze the message to understand both explicit and implicit information.
         
-
         For example, if the user says "without kids" or "no children", set "kids" to "no".
         If they mention "all adults", also set "kids" to "no".
         If they mention family with children, set "kids" to "yes".
         The people field should be integer.
-        Specifically, if the user gives a start date, set "start_date" in YYYY-MM-DD format string.Otherwise, set "start_date" to "not decided".
+        Specifically, if the user gives a start date, set "start_date" in YYYY-MM-DD format string. Otherwise, set "start_date" to "not decided".
         Pay attention to negations and context. Don't just look for keywords, understand the meaning.
+        
+        IMPORTANT: Also extract any specific requirements, constraints, or special requests the user mentions. 
+        This includes but is not limited to:
+        - Accessibility needs (e.g., wheelchair access, limited mobility)
+        - Food restrictions or dietary preferences
+        - Special interests or experiences they want to have
+        - Particular constraints (e.g., fear of heights, need quiet accommodations)
+        - Any important preferences not covered by other fields
         
         Return the following JSON structure:
         {{
-        {', '.join([f'"{field}": ""' for field in self.required_fields])}
+        {', '.join([f'"{field}": ""' for field in self.all_fields])}
         }}
         
-        If any field is missing or unclear, leave it as an empty string.
+        For required fields, if any information is missing or unclear, leave it as an empty string.
+        For specificRequirements, capture any important preferences or constraints mentioned by the user.
         """
         
         messages = [
@@ -115,7 +129,7 @@ class ChatAgent:
 
             # Only update fields that have non-empty values
             filtered_info = {}
-            for field in self.required_fields:
+            for field in self.all_fields:
                 value = extracted_info.get(field, "")
                 if value:  # Only include non-empty values
                     filtered_info[field] = value

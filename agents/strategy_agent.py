@@ -50,6 +50,17 @@ class StrategyAgent:
 
             user_prefs_str = json.dumps(user_prefs, indent=2, ensure_ascii=False)
             weather_str = weather_summary if weather_summary else "No specific weather summary provided."
+            
+            # Extract specific requirements if they exist
+            specific_requirements = user_prefs.get('specificRequirements', '')
+            specific_requirements_section = ""
+            if specific_requirements:
+                specific_requirements_section = f"""
+                Additional specific requirements/constraints from user:
+                {specific_requirements}
+                
+                Please consider these specific requirements when creating the itinerary.
+                """
 
             for i in range(max_try):
                 prompt = f"""
@@ -58,6 +69,8 @@ class StrategyAgent:
 
                 User Preferences:
                 {user_prefs_str}
+                
+                {specific_requirements_section}
 
                 Weather Summary for the trip period:
                 {weather_str}
@@ -201,38 +214,95 @@ class StrategyAgent:
                 total_duration += duration  
         return result
     
-    # 该租车判断逻辑是否合理？是否更应该考虑当地具体的交通情况？
-    def should_rent_car(self, selected_spots, city, user_prefs):
-        """Determine if car rental is recommended based on selected attractions"""
-        # If fewer than 2 spots selected, no need for car
-        if len(selected_spots) < 2:
+    def extract_rental_recommendation(self, recommendation_text):
+        """Extract car rental recommendation from AI response"""
+        try:
+            original_text = recommendation_text
+            recommendation_text = recommendation_text.lower()
+            
+            print(f"[DEBUG] Analyzing rental recommendation from text: {recommendation_text[:200]}...")
+            
+            # First, try to find a structured car rental marker if present
+            structured_marker = re.search(r'\[car_rental:(yes|no)\]', recommendation_text, re.IGNORECASE)
+            if structured_marker:
+                decision = structured_marker.group(1).lower()
+                should_rent = decision == 'yes'
+                print(f"[DEBUG] Found structured car rental marker: [{decision}], should_rent_car = {should_rent}")
+                return should_rent
+            
+            # Look for rental recommendation section
+            car_rental_section_match = re.search(r'car rental recommendation:(.+?)(?=\n\n|\Z)', recommendation_text, re.DOTALL | re.IGNORECASE)
+            if car_rental_section_match:
+                car_rental_section = car_rental_section_match.group(1).lower().strip()
+                print(f"[DEBUG] Found car rental section: {car_rental_section}")
+                
+                # Look for decisive phrases first - these are the most reliable indicators
+                if car_rental_section.startswith("yes") or "i recommend renting" in car_rental_section:
+                    print("[DEBUG] Found explicit YES recommendation")
+                    return True
+                    
+                if car_rental_section.startswith("no") or "i do not recommend" in car_rental_section or "i don't recommend" in car_rental_section:
+                    print("[DEBUG] Found explicit NO recommendation")
+                    return False
+                
+                # Clear positive indicators
+                positive_indicators = [
+                    "recommend renting a car",
+                    "would recommend renting",
+                    "recommend you rent",
+                    "recommend renting",
+                    "should rent a car",
+                    "renting a car is recommended",
+                    "car rental is recommended",
+                    "i recommend a car rental",
+                    "car rental would be beneficial",
+                    "would benefit from renting",
+                    "car would be helpful"
+                ]
+                
+                # Clear negative indicators
+                negative_indicators = [
+                    "not recommend renting",
+                    "don't recommend renting",
+                    "do not recommend renting",
+                    "wouldn't recommend renting",
+                    "would not recommend renting",
+                    "shouldn't rent a car",
+                    "should not rent a car",
+                    "no need to rent",
+                    "no need for a car",
+                    "renting a car is not recommended",
+                    "car rental is not recommended",
+                    "i do not recommend a car rental",
+                    "without renting",
+                    "without a car"
+                ]
+                
+                for indicator in positive_indicators:
+                    if indicator in car_rental_section:
+                        print(f"[DEBUG] Found positive indicator '{indicator}' - should rent car: TRUE")
+                        return True
+                        
+                for indicator in negative_indicators:
+                    if indicator in car_rental_section:
+                        print(f"[DEBUG] Found negative indicator '{indicator}' - should rent car: FALSE")
+                        return False
+            
+            # Look for recommendation in the full text if section wasn't found or conclusive
+            if "not recommend renting a car" in recommendation_text or "do not recommend renting a car" in recommendation_text:
+                print("[DEBUG] Found negative recommendation in full text - should rent car: FALSE")
+                return False
+            elif "recommend renting a car" in recommendation_text:
+                print("[DEBUG] Found positive recommendation in full text - should rent car: TRUE")
+                return True
+            
+            print(f"[CRITICAL] Could not determine car rental recommendation from text. Full original text: {original_text}")
+            print(f"[DEBUG] Defaulting to FALSE for safety")
             return False
-        
-        # Check if any attractions are far from city center
-        far_attractions = 0
-        for spot in selected_spots:
-            # This is simplified - would need actual distance data
-            if spot.get("distance_from_center", 0) > 5:  # km
-                far_attractions += 1
-        
-        # If more than half of attractions are far, suggest car rental
-        if far_attractions > len(selected_spots) / 2:
-            return True
-        
-        # Check if user has physical limitations
-        if user_prefs.get("health") == "limited":
-            return True
-        
-        # Check if user has kids
-        if user_prefs.get("kids", False):
-            return True
-        
-        # Check for nature attractions which may be remote
-        nature_attractions = [spot for spot in selected_spots if spot.get("category") == "nature"]
-        if len(nature_attractions) >= 2:
-            return True
-        
-        return False
+            
+        except Exception as e:
+            print(f"[ERROR] Error analyzing recommendation: {e}")
+            return False
     
     def get_ai_recommendation(self, user_prefs, selected_spots, total_days, user_name=None) -> Generator:
         """Get AI recommendation about the overall trip plan"""
@@ -250,9 +320,18 @@ class StrategyAgent:
         budget = user_prefs.get('budget', 'medium')
         hobbies = user_prefs.get('hobbies', '')
         name = user_prefs.get('name', name)
-        should_rent_car = user_prefs.get('should_rent_car', False)
+        
+        # Extract specific requirements if they exist
+        specific_requirements = user_prefs.get('specificRequirements', '')
+        specific_requirements_section = ""
+        if specific_requirements:
+            specific_requirements_section = f"""
+        Special Requirements/Constraints:
+        {specific_requirements}
+            """
+        
         prompt = f"""
-        {name} is planning a {days}-day trip with the following attractions:
+        You are providing travel recommendations to {name} who is planning a {days}-day trip with the following attractions:
         {', '.join(spot_names)}
         
         Their specific preferences are:
@@ -261,23 +340,55 @@ class StrategyAgent:
         - Health/Dietary requirements: {health_prefs}
         - Budget level: {budget}
         - Interests/Hobbies: {hobbies}
-        - should_rent_car: {should_rent_car}
+        {specific_requirements_section}
         
-        Based on these EXACT preferences, please provide recommendations:
-        1. Would you recommend renting a car for this itinerary? Why or why not?
-        2. What adjustments would you suggest to make the trip more enjoyable given these specific preferences?
+        Based on these preferences, provide recommendations in the following format:
+
+        ## Car Rental Recommendation:
+        [car_rental:YES/NO] (Use YES or NO only)
+
+        Provide your detailed explanation for the car rental recommendation here. Clearly state whether you recommend renting a car and why or why not. Be decisive and clear.
+
+        ## Trip Adjustments:
+        Provide suggestions to make the trip more enjoyable based on the traveler's preferences.
         
-        IMPORTANT: Make sure your recommendations align with the traveler's actual preferences as listed above.
-        For example, if they are not traveling with children, do not suggest child-friendly activities.
+        IMPORTANT: 
+        1. Always use SECOND PERSON perspective - speak directly TO {name}, not about them. For example, say "I recommend you..." instead of "I recommend {name} should...".
+        2. You must include the [car_rental:YES] or [car_rental:NO] marker in your response, though this will be removed before showing to the user.
+        3. Be very clear about your car rental recommendation - unambiguously state "I recommend you rent a car" or "I do not recommend you rent a car".
+        4. Don't mention a car rental if you don't recommend it.
+        5. Keep your language friendly, helpful and personable.
         """
         
         messages = [
-            SystemMessage(content="You are a travel advisor helping with trip logistics. Always base your recommendations on the exact preferences provided by the traveler.(Call him/her by his/her name)"),
+            SystemMessage(content=f"You are a travel advisor helping {name} plan their trip. Address them directly using second person (you/your). Format your response as requested with the car rental marker."),
             HumanMessage(content=prompt)
         ]
         
         try:
-            return self.model.stream(messages)
+            # Get the full response first to analyze it
+            response = self.model(messages)
+            recommendation_text = response.content
+            
+            # Print the raw recommendation for debugging
+            print(f"[DEBUG] Raw AI recommendation text: {recommendation_text[:200]}...")
+            
+            # Analyze the recommendation to determine if car rental is recommended
+            should_rent_car = self.extract_rental_recommendation(recommendation_text)
+            
+            # Update the user_prefs with the new should_rent_car value
+            user_prefs['should_rent_car'] = should_rent_car
+            
+            print(f"[DEBUG] AI recommendation analyzed - should_rent_car: {should_rent_car}")
+            
+            # Remove the [car_rental:YES/NO] markers from the text before displaying to the user
+            cleaned_text = re.sub(r'\[car_rental:(yes|no)\]', '', recommendation_text, flags=re.IGNORECASE)
+            
+            # Generate message chunks with the cleaned content for streaming
+            def generate_chunks():
+                yield AIMessage(content=cleaned_text)
+                
+            return generate_chunks()
         except Exception as e:
             print(f"Error in get_ai_recommendation: {e}")
             return None
