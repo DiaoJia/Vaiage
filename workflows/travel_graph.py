@@ -6,7 +6,6 @@ from agents.route_agent import RouteAgent
 from agents.communication_agent import CommunicationAgent
 from datetime import datetime, timedelta
 from langchain.schema import AIMessage
-from workflows.evaluation import evaluate_state_with_llm
 
 import traceback
 # This is a simplified state graph manager since we're not using the actual langgraph library
@@ -25,8 +24,8 @@ class TravelGraph:
             "weather_summary": None, # To store weather summary string
             "selected_attractions": [],
             "additional_attractions": [],
-            "should_rent_car": False,
-            "rental_post": None,
+            "should_rent_car": False, # Ensure this defaults to False
+            # "rental_post": None, # Intentionally removed from state
             "itinerary": [],
             "budget": {},
             "ai_recommendation_generated": False, # Flag for strategy AI advice
@@ -39,7 +38,9 @@ class TravelGraph:
             self.session_states[session_id] = {
                 "user_info": {}, "attractions": [], "weather_summary": None,
                 "selected_attractions": [], "additional_attractions": [],
-                "should_rent_car": False, "rental_post": None, "itinerary": [], "budget": {},
+                "should_rent_car": False, # Ensure this defaults to False
+                # "rental_post": None, # Intentionally removed from state
+                "itinerary": [], "budget": {},
                 "ai_recommendation_generated": False,
             }
         return self.session_states[session_id]
@@ -88,8 +89,10 @@ class TravelGraph:
         chat_result = self.chat_agent.collect_info(user_input or "", current_user_info)
         
         if chat_result.get("state"):
-            self.state["user_info"].update(chat_result["state"]) # Merge updates
+            self.state["user_info"].update(chat_result["state"])
             # print(f"[DEBUG] Updated user_info in _process_chat: {self.state['user_info']}")
+            # Remove rental_post from state if it was ever set here, though unlikely for chat
+            # self.state.pop("rental_post", None)
 
         response_data = {
             "state": self.state.copy(), # Return a fresh copy of the current state
@@ -328,13 +331,12 @@ class TravelGraph:
                 print("[CRITICAL] Handling satisfaction confirmation without prior recommendation generation")
                 # This means user sent satisfaction message before going through normal flow
                 # We need to ensure should_rent_car is correctly set to false in this case
-                self.state["should_rent_car"] = False
+                self.state["should_rent_car"] = False # Ensure it's false
                 print("[DEBUG] Set should_rent_car to False for satisfaction message without prior recommendation")
             
-            # Only move to communication step if car rental is actually needed
-            should_rent = self.state.get("should_rent_car", False)
-            next_step = "communication" if should_rent else "route"
-            print(f"[CRITICAL] Decision point: should_rent_car = {should_rent}, next_step = {next_step}")
+            # ALWAYS GO TO ROUTE STEP, SKIP COMMUNICATION
+            next_step = "route"
+            print(f"[CRITICAL] Decision point: Forcing next_step to '{next_step}' to skip car rental communication.")
             
             # Create a generator that yields the transition message
             def transition_generator():
@@ -373,56 +375,66 @@ class TravelGraph:
     
     # After strategy step + self.state.get("should_rent_car", False) == True
     def _process_communication(self, response_message=None, **kwargs):
-        """Process communication agent step"""
-        # First check if car rental is actually recommended
-        if not self.state.get("should_rent_car", False):
-            # If car rental is NOT recommended, skip to route planning
-            def skip_rental_generator():
-                yield AIMessage(content="Moving to the route planning step...")
-                
-            return {
-                "next_step": "route",
-                "stream": skip_rental_generator(),
-            }
+        """Process communication agent step - LOGIC MOSTLY COMMENTED OUT"""
+        # First check if car rental is actually recommended (THIS CHECK IS NOW REDUNDANT as we skip this step)
+        # if not self.state.get("should_rent_car", False):
+        #     # If car rental is NOT recommended, skip to route planning
+        #     def skip_rental_generator():
+        #         yield AIMessage(content="Moving to the route planning step...")
+        #         
+        #     return {
+        #         "next_step": "route",
+        #         "stream": skip_rental_generator(),
+        #     }
             
-        if response_message and self.state.get("rental_post"):
-            # Handle response to rental post
-            reply = self.comm_agent.handle_rental_response(
-                self.state["rental_post"],
-                response_message
-            )
-            
-            # Create a generator that yields the response message
-            def reply_generator():
-                yield AIMessage(content="Thank you for handling the car rental.")
-            
-            return {
-                "next_step": "route",  # Move to route planning after rental communication
-                "stream": reply_generator(),
-                "reply": reply
-            }
-        else:
-            # Generate rental post
-            location = self.state["user_info"].get("city", "")
-            duration = self.state["user_info"].get("days", 1)
-            
-            rental_post = self.comm_agent.post_car_rental_request(
-                location,
-                duration,
-                self.state["user_info"]
-            )
-            
-            self.state["rental_post"] = rental_post
-            
-            # Create a generator that yields the response message
-            def response_generator():
-                yield AIMessage(content="We recommend renting a car for your trip. I've created a car rental request post for you. Feel free to use it.")
-            
-            return {
-                "next_step": "route",  # Continue with route planning while waiting for responses
-                "stream": response_generator(),
-                "rental_post": rental_post
-            }
+        # if response_message and self.state.get("rental_post"):
+        #     # Handle response to rental post
+        #     reply = self.comm_agent.handle_rental_response(
+        #         self.state["rental_post"],
+        #         response_message
+        #     )
+        #     
+        #     # Create a generator that yields the response message
+        #     def reply_generator():
+        #         yield AIMessage(content="Thank you for handling the car rental.")
+        #     
+        #     return {
+        #         "next_step": "route",  # Move to route planning after rental communication
+        #         "stream": reply_generator(),
+        #         "reply": reply
+        #     }
+        # else:
+        #     # Generate rental post
+        #     location = self.state["user_info"].get("city", "")
+        #     duration = self.state["user_info"].get("days", 1)
+        #     
+        #     rental_post_content = self.comm_agent.post_car_rental_request(
+        #         location,
+        #         duration,
+        #         self.state["user_info"]
+        #     )
+        #     
+        #     self.state["rental_post"] = rental_post_content # Store actual content not the UI representation
+        #     
+        #     # Create a generator that yields the response message
+        #     def response_generator():
+        #         yield AIMessage(content="We recommend renting a car for your trip. I've created a car rental request post for you. Feel free to use it.")
+        #     
+        #     return {
+        #         "next_step": "route",  # Continue with route planning while waiting for responses
+        #         "stream": response_generator(),
+        #         "rental_post": rental_post_content # Return the actual post content
+        #     }
+
+        # Fallback / Default behavior if this step is somehow still called:
+        print("[WARN] _process_communication was called but should be skipped. Proceeding to route planning.")
+        def default_transition_generator():
+            yield AIMessage(content="Proceeding to route planning...")
+        return {
+            "next_step": "route",
+            "stream": default_transition_generator(),
+            "state": self.state.copy()
+        }
     
     def _process_route(self, start_date=None, **kwargs):
         """Process route agent step"""
@@ -473,7 +485,11 @@ class TravelGraph:
             optimal_route = []
             if itinerary:
                 for day_plan_item in itinerary: # Iterate through list of day plans
-                    optimal_route.extend(day_plan_item.get("spots", []))
+                    day_number = day_plan_item.get("day")
+                    for spot in day_plan_item.get("spots", []):
+                        spot_with_day = spot.copy() # Avoid modifying original spot in itinerary
+                        spot_with_day["day"] = day_number
+                        optimal_route.append(spot_with_day)
            
             # Estimate budget
 
@@ -507,9 +523,6 @@ class TravelGraph:
                 self.state["should_rent_car"],
                 self.state["user_info"].get("name", "Traveler"),
             )
-
-            # evaluation test
-            evaluate_state_with_llm(self.state)
             
             return {
                 "next_step": "complete",

@@ -142,6 +142,13 @@ def stream():
             selected_attraction_ids = json.loads(selected_attraction_ids)
         except json.JSONDecodeError:
             selected_attraction_ids = None
+            
+    # Check if the user is confirming satisfaction with the recommendation
+    satisfaction_message = 'satisfied with your recommendation' in user_input.lower()
+    
+    if satisfaction_message:
+        print(f"[CRITICAL] Detected satisfaction message: '{user_input}'")
+    
     def generate():
         try:
             # Process the step
@@ -150,12 +157,18 @@ def stream():
                 user_input=user_input,
                 selected_attraction_ids=selected_attraction_ids
             )
+            
+            # Check the should_rent_car status right after processing
+            current_should_rent_car = workflow.get_current_state().get('should_rent_car', False)
+            print(f"[CRITICAL] After processing step, should_rent_car = {current_should_rent_car}")
+            
             # Handle streaming response
             if 'stream' in result and result['stream']:
                 for chunk in result['stream']:
                     if chunk.content:
                         yield f"data: {{\"type\": \"chunk\", \"content\": {json.dumps(chunk.content)} }}\n\n"
                         time.sleep(0.01)
+            
             # Send completion data
             completion_data = {
                 'type': 'complete',
@@ -170,10 +183,34 @@ def stream():
                 'optimal_route': result.get('optimal_route'),
                 'rental_post': result.get('rental_post')
             }
-            if step_name == 'strategy' and workflow.get_current_state().get('ai_recommendation_generated', False):
-                completion_data['next_step'] = 'communication' if workflow.get_current_state().get('should_rent_car', False) else 'route'
-                print(f"[DEBUG] Forcing next step to: {completion_data['next_step']}")
+            
+            # Only override next_step in specific cases
+            if step_name == 'strategy':
+                current_state = workflow.get_current_state()
+                ai_recommendation_generated = current_state.get('ai_recommendation_generated', False)
+                should_rent_car = current_state.get('should_rent_car', False)
+                
+                print(f"[CRITICAL] In stream endpoint, strategy step: ai_recommendation_generated={ai_recommendation_generated}, should_rent_car={should_rent_car}, satisfaction_message={satisfaction_message}")
+                
+                # If the AI has provided recommendations (whether through initial selection or satisfaction confirmation)
+                if ai_recommendation_generated or satisfaction_message:
+                    # IMPORTANT: Double-check the should_rent_car value from the current state
+                    next_step = 'communication' if should_rent_car else 'route'
+                    completion_data['next_step'] = next_step
+                    print(f"[CRITICAL] Setting next_step to '{next_step}' based on should_rent_car={should_rent_car}")
+                    
+                    # Add explicit note about car recommendation decision
+                    if should_rent_car:
+                        print("[CRITICAL] Car rental IS recommended - moving to communication step")
+                    else:
+                        print("[CRITICAL] Car rental is NOT recommended - skipping directly to route step")
+                
             yield f"data: {json.dumps(completion_data)}\n\n"
+            
+            # Verify the final decision after sending the completion data
+            final_next_step = completion_data.get('next_step')
+            print(f"[CRITICAL] Final decision: next_step = {final_next_step}, should_rent_car = {workflow.get_current_state().get('should_rent_car', False)}")
+            
         except Exception as e:
             print(f"[ERROR] in stream route: {str(e)}")
             yield f"data: {{\"type\": \"error\", \"error\": {json.dumps(str(e))} }}\n\n"

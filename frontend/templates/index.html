@@ -76,7 +76,7 @@
             <div class="col-md-6">
                 <!-- Chat messages -->
                 <div class="card mb-3">
-                    <div class="card-header bg-primary text-white">
+                    <div class="card-header header-chat">
                         <i class="fas fa-comments me-2"></i> Your Travel Assistant
                     </div>
                     <div class="card-body" id="chat-container">
@@ -119,7 +119,7 @@
 
                 <!-- Itinerary -->
                 <div class="card mb-3">
-                    <div class="card-header bg-primary text-white">
+                    <div class="card-header header-itinerary">
                         <i class="fas fa-list-alt me-2"></i> Your Itinerary
                     </div>
                     <div class="card-body" id="itinerary-container">
@@ -129,7 +129,7 @@
 
                 <!-- Budget -->
                 <div class="card mb-3">
-                    <div class="card-header bg-primary text-white">
+                    <div class="card-header header-budget">
                         <i class="fas fa-wallet me-2"></i> Budget Estimate
                     </div>
                     <div class="card-body" id="budget-container">
@@ -139,7 +139,7 @@
 
                 <!-- Detailed Plan / Confirmation -->
                 <div class="card mb-3">
-                    <div class="card-header bg-primary text-white">
+                    <div class="card-header header-confirmation">
                         <i class="fas fa-file-alt me-2"></i> Trip Confirmation
                     </div>
                     <div class="card-body" id="confirmation-container">
@@ -147,76 +147,46 @@
                     </div>
                 </div>
 
-                <!-- Car Rental Post -->
-                <div class="card mb-3">
-                    <div class="card-header bg-primary text-white">
-                        <i class="fas fa-car me-2"></i> Car Rental Request
-                    </div>
-                    <div class="card-body" id="rental-post-container">
-                        <p class="text-center text-muted">Car rental post will appear here once generated.</p>
-                    </div>
-                </div>
             </div>
             
             <!-- Right Panel: Map and Results -->
             <div class="col-md-6">
-                <!-- Top World Attractions -->
-                <div class="card mb-3">
-                    <div class="card-header bg-primary text-white">
-                        <i class="fas fa-star me-2"></i> Top World Attractions
-                    </div>
-                    <div class="card-body p-0">
-                        <div class="scroll-container">
-                            <div class="scroll-content">
-                                {% for attraction in popular_attractions %}
-                                <div class="attraction-card" aria-label="Attraction: {{ attraction.name }}, {{ attraction.city }}, {{ attraction.country }}">
-                                    <img src="{{ attraction.image_url }}" alt="{{ attraction.name }}">
-                                    <div class="attraction-info">
-                                        <h4>{{ loop.index }}. {{ attraction.name }}</h4>
-                                        <p>{{ attraction.city }}, {{ attraction.country }}</p>
-                                        <p>{{ attraction.description }}</p>
-                                    </div>
-                                </div>
-                                {% endfor %}
-                                {% for attraction in popular_attractions %}
-                                <div class="attraction-card" aria-label="Attraction: {{ attraction.name }}, {{ attraction.city }}, {{ attraction.country }}">
-                                    <img src="{{ attraction.image_url }}" alt="{{ attraction.name }}">
-                                    <div class="attraction-info">
-                                        <h4>{{ loop.index }}. {{ attraction.name }}</h4>
-                                        <p>{{ attraction.city }}, {{ attraction.country }}</p>
-                                        <p>{{ attraction.description }}</p>
-                                    </div>
-                                </div>
-                                {% endfor %}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
                 <!-- Map -->
                 <div class="card mb-3">
-                    <div class="card-header bg-primary text-white">
+                    <div class="card-header header-map">
                         <i class="fas fa-map-marked-alt me-2"></i> Map View
                     </div>
                     <div class="card-body p-0">
                         <div id="map" style="height: 300px;"></div>
                     </div>
                 </div>
-                
-                
-                <!-- Recommendations -->
-                <div class="card">
-                    <div class="card-header bg-primary text-white">
+
+                <!-- New Paginated Recommended Places -->
+                <div class="card mb-3">
+                    <div class="card-header header-recommend">
                         <i class="fas fa-star me-2"></i> Recommended Places
                     </div>
-                    <div class="card-body" id="recommendations-container">
-                        <p class="text-center text-muted">Recommendations will appear here based on your preferences.</p>
+                    <div class="card-body" id="paginated-recommendations-container">
+                        <!-- Pagination Controls - REMAINS HERE -->
+                        <div class="d-flex justify-content-between align-items-center mb-2 d-none" id="recommendations-pagination-controls">
+                            <button class="btn btn-outline-primary btn-sm" id="prev-attraction-btn"><i class="fas fa-arrow-left"></i> Previous</button>
+                            <span id="attraction-page-info" class="text-muted small">Page 1 of X</span>
+                            <button class="btn btn-outline-primary btn-sm" id="next-attraction-btn">Next <i class="fas fa-arrow-right"></i></button>
+                        </div>
+                        <!-- Area for dynamic attraction content -->
+                        <div id="attraction-content-area">
+                            <p class="text-center text-muted">Recommendations will appear here.</p>
+                        </div>
+                    </div>
+                    <!-- Confirm All Selections Footer - REMAINS HERE -->
+                     <div class="card-footer text-center d-none" id="confirm-all-selections-footer">
+                        <button class="btn btn-primary w-50" id="confirm-selected-attractions-btn">Confirm Selected Attractions</button>
                     </div>
                 </div>
-                
+
                 <!-- Selected Attractions -->
                 <div class="card mt-3">
-                    <div class="card-header bg-primary text-white">
+                    <div class="card-header header-selected">
                         <i class="fas fa-check-circle me-2"></i> Selected Attractions
                     </div>
                     <div class="card-body" id="selected-attractions">

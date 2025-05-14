@@ -249,33 +249,52 @@ class InformationAgent:
                     fields=place_details_fields 
                 )
                 details = details_response.get('result', {})
-                if not details: continue
+                if not details: 
+                    print(f"[WARN] No details found for place_id {pid}. Skipping.")
+                    continue
 
-                location_data = details.get('geometry', {}).get('location', {})
+                # Ensure location_data is an object with lat/lng, even if values are None
+                raw_location = details.get('geometry', {}).get('location', {})
+                location_data = {
+                    'lat': raw_location.get('lat'),
+                    'lng': raw_location.get('lng')
+                }
+                if not isinstance(location_data['lat'], (int, float)):
+                    print(f"[WARN] Invalid or missing lat for place_id {pid}. Name: {details.get('name')}. Setting to None.")
+                    location_data['lat'] = None
+                if not isinstance(location_data['lng'], (int, float)):
+                    print(f"[WARN] Invalid or missing lng for place_id {pid}. Name: {details.get('name')}. Setting to None.")
+                    location_data['lng'] = None
                 
                 description = details.get('editorial_summary', {}).get('overview', '')
                 if not description: description = details.get('name', 'No description available.')
                 
+                # Construct image URL from photo reference, default to None
+                image_url = None
+                if photo_references_from_place and self.maps_api_key and photo_references_from_place[0]:
+                    image_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photo_references_from_place[0]}&key={self.maps_api_key}"
+                elif not photo_references_from_place or not photo_references_from_place[0]:
+                    print(f"[WARN] No photo reference for place_id {pid}. Name: {details.get('name')}. Image URL will be None.")
+
                 initial_pois.append({
                     'id': pid, 
                     'name': details.get('name'), 
-                    'rating': details.get('rating'),
-                    'user_ratings_total': details.get('user_ratings_total'),
-                    'price_level': details.get('price_level'),
-                    'opening_hours': details.get('opening_hours', {}).get('weekday_text'),
-                    'address': details.get('formatted_address'),
-                    'location': {'lat': location_data.get('lat'), 'lng': location_data.get('lng')},
-                    'category': primary_category_from_place, # Use category from nearby search result
-                    'types': place_types_list, # Full list of types from nearby search
-                    'estimated_duration': self.estimate_duration(primary_category_from_place, details), # Pass category from nearby
-                    'website': details.get('website'), 
+                    'rating': details.get('rating'), # Will be None if not present
+                    'user_ratings_total': details.get('user_ratings_total'), # Will be None if not present
+                    'price_level': details.get('price_level'), # Will be None if not present
+                    'opening_hours': details.get('opening_hours', {}).get('weekday_text'), # Will be None if not present
+                    'address': details.get('formatted_address'), # Will be None if not present
+                    'location': location_data, # Ensured to be an object with lat/lng (possibly None)
+                    'category': primary_category_from_place,
+                    'types': place_types_list,
+                    'estimated_duration': self.estimate_duration(primary_category_from_place, details),
+                    'website': details.get('website'), # Will be None if not present
                     'description': description,
-                    'photo_references': photo_references_from_place # Use photo_references from nearby
+                    'photo_references': photo_references_from_place,
+                    'image_url': image_url # Will be None if no valid reference
                 })
             except Exception as e:
-                print(f"Error fetching or processing details for place_id {pid}: {e}")
-                # import traceback # For more detailed error logging if needed
-                # traceback.print_exc()
+                print(f"[ERROR] Exception during processing of place_id {pid} in get_attractions: {e}")
                 continue
         
         print(f"[INFO_AGENT] Processed details for {len(initial_pois)} POIs.")
@@ -285,7 +304,7 @@ class InformationAgent:
         if sort_by == 'price':
             initial_pois.sort(key=lambda x: (x.get('price_level') is None, x.get('price_level', float('inf'))))
         elif sort_by == 'rating':
-            initial_pois.sort(key=lambda x: (x.get('rating') is None, -(x.get('rating', 0.0))))
+            initial_pois.sort(key=lambda x: (x.get('rating') is None, -(float(x.get('rating', 0.0) or 0.0))))
 
         if user_prefs and self.llm:
             print(f"[INFO_AGENT] Re-ranking {len(initial_pois)} attractions with LLM.")
@@ -738,7 +757,12 @@ class InformationAgent:
             
             # Process restaurant information
             processed_restaurants = []
-            for place in restaurants_result.get('results', [])[:5]:  # Only take the first 5 results
+            # Sort all fetched restaurants by rating (descending) before further processing
+            # Handle cases where rating might be missing by defaulting to 0 for sorting
+            all_fetched_restaurants = restaurants_result.get('results', [])
+            all_fetched_restaurants.sort(key=lambda p: p.get('rating', 0), reverse=True)
+
+            for place in all_fetched_restaurants[:3]:  # Only take the top 3 after sorting
                 try:
                     # Get detailed information
                     place_details = self.poi_api.get_poi_details(
