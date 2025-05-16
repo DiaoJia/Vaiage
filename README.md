@@ -28,10 +28,13 @@ Vaiage is an AI-powered travel planning application designed to help users creat
 - **Networking**: `http.client` (for car rental API), `requests` (for weather API)
 - **Route Optimization**: `networkx` (for TSP solving)
 
-## Setup
-
 ## Usage
 
-## Contributing
-
-## License
+1.  **Get API Keys**: Obtain your own API keys for:
+    *   OpenAI
+    *   Google Maps Platform
+    *   RapidAPI (for Booking.com via car_rental_api.py)
+2.  **Clone the Repository**: `git clone <repository_url>`
+3.  **Install Dependencies**: `pip install -r requirements.txt`
+4.  **Configure API Keys**: You will likely need to set your API keys as environment variables or in a configuration file (details should be checked within the codebase, e.g., `.env` file usage in `agents/information_agent.py`).
+5.  **Run the Application**: `python main.py`
