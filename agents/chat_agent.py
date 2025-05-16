@@ -6,7 +6,7 @@ from typing import Generator
 
 class ChatAgent:
     def __init__(self, model_name="gpt-3.5-turbo"):
-        """Initialize the ChatAgent with specified model"""
+        """Initialize the ChatAgent with specified model."""
         self.model = ChatOpenAI(model_name=model_name, temperature=0.7, streaming=True)
         # Define required fields (these must be filled)
         self.required_fields = ["name", "city", "days", "budget", "people", "kids", "health", "hobbies", "start_date"]
@@ -15,7 +15,7 @@ class ChatAgent:
         self.conversation_history = []
         
     def _init_system_message(self):
-        """Initialize system message for the conversation"""
+        """Initialize system message for the conversation."""
         return SystemMessage(content="""
         You are a helpful travel assistant. Your job is to collect information about the user's travel plans.
         Be friendly, conversational, and help the user plan their trip. Collect all necessary information.
@@ -24,7 +24,7 @@ class ChatAgent:
         """)
         
     def collect_info(self, user_input: str, state: dict = None) -> dict:
-        """Check for missing information and ask user questions to complete the required information"""
+        """Check for missing information and ask user questions to complete the required information."""
         if state is None:
             state = {}
         
@@ -75,7 +75,7 @@ class ChatAgent:
             }
     
     def interact_with_user(self, message: str, state: dict = None) -> Generator:
-        """Process user message and generate a streaming response"""
+        """Process user message and generate a streaming response."""
         if state is None:
             state = {}
             
@@ -90,14 +90,14 @@ class ChatAgent:
             return None
     
     def extract_info_from_message(self, message: str) -> dict:
-        """Use LLM to extract structured travel information from user message"""
+        """Use LLM to extract structured travel information from user message."""
         system_prompt = f"""Extract the following travel information from the user's message and return JSON.
         Carefully analyze the message to understand both explicit and implicit information.
         
         For example, if the user says "without kids" or "no children", set "kids" to "no".
         If they mention "all adults", also set "kids" to "no".
         If they mention family with children, set "kids" to "yes".
-        The people field should be integer.
+        The people field should be an integer.
         Specifically, if the user gives a start date, set "start_date" in YYYY-MM-DD format string. Otherwise, set "start_date" to "not decided".
         Pay attention to negations and context. Don't just look for keywords, understand the meaning.
         

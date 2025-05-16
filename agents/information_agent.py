@@ -18,6 +18,7 @@ from services.car_rental_api import CarRentalService
 from services.fuel_price_api import get_gas_price
 
 def format_duration(seconds):
+    """Format duration in seconds to a human-readable string (hours and minutes)."""
     if seconds is None:
         return "N/A"
     minutes, sec = divmod(seconds, 60)
@@ -31,8 +32,9 @@ def format_duration(seconds):
          duration_str = f"{sec} sec{'s' if sec > 1 else ''}"
     return duration_str.strip()
 
-# --- Helper function for formatting distance ---
+# Helper function for formatting distance
 def format_distance(meters):
+    """Format distance in meters to a string with kilometers and miles."""
     if meters is None:
         return "N/A"
     km = meters / 1000.0
@@ -41,6 +43,7 @@ def format_distance(meters):
 
 class InformationAgent:
     def __init__(self, maps_api_key=None, car_api_key="101c26fdb2msh34c9d61906a2fd7p17131ajsn68eb8cc9ec7f", llm_model_name="gpt-4o"):
+        """Initialize the InformationAgent with API keys and LLM model name."""
         self.maps_api_key = maps_api_key or os.getenv("MAPS_API_KEY")
         self.rapidapi_key = car_api_key or os.getenv("RAPIDAPI_KEY")
         
@@ -70,6 +73,7 @@ class InformationAgent:
         self.llm_rerank_cache = {}
 
     def _get_rerank_cache_key(self, user_prefs, attractions_ids_tuple, weather_summary):
+        """Generate a cache key for LLM re-ranking based on user preferences, attraction IDs, and weather."""
         prefs_str = json.dumps(user_prefs, sort_keys=True)
         ids_str = json.dumps(attractions_ids_tuple, sort_keys=True)
         weather_str = weather_summary if weather_summary else ""
@@ -77,6 +81,7 @@ class InformationAgent:
         return hash_object.hexdigest()
 
     def _create_llm_rerank_prompt(self, user_prefs, attractions_for_llm, weather_summary):
+        """Create a prompt for the LLM to re-rank attractions."""
         attractions_str = json.dumps(attractions_for_llm, indent=2, ensure_ascii=False)
         user_prefs_str = json.dumps(user_prefs, indent=2, ensure_ascii=False)
         weather_str = weather_summary if weather_summary else "No specific weather summary provided."
@@ -110,6 +115,7 @@ class InformationAgent:
         return prompt
 
     def _rerank_attractions_with_llm(self, attractions_list: list, user_prefs: dict, weather_summary: str = None):
+        """Re-rank attractions using an LLM based on user preferences and weather."""
         if not self.llm:
             print("LLM not available for re-ranking. Returning original list.")
             return attractions_list
@@ -123,7 +129,7 @@ class InformationAgent:
         for attr in attractions_list:
             attractions_for_llm.append({
                 "id": attr.get("id"), "name": attr.get("name"), "category": attr.get("category"),
-                "description": attr.get("description", attr.get("name","No description available.")), 
+                "description": attr.get("description", attr.get("name","No description available.")),
                 "estimated_duration": attr.get("estimated_duration"),
                 "price_level": attr.get("price_level"), "rating": attr.get("rating"),
             })
@@ -179,13 +185,14 @@ class InformationAgent:
                 seen_ids.add(id_)
         
         for attr in attractions_list:
-            if attr.get('id') not in seen_ids: # Check if attr.get('id') exists
+            if attr.get('id') not in seen_ids: # Add any attractions not in the LLM's ranked list
                 ordered_attractions.append(attr)
         
         print(f"[INFO_AGENT_LLM] Re-ranked list size: {len(ordered_attractions)}")
         return ordered_attractions
 
     def city2geocode(self, city: str):
+        """Convert city name to geographic coordinates (latitude and longitude)."""
         try:
             coordinates = self.gmaps.geocode(city)
             if not coordinates: return None
@@ -199,8 +206,9 @@ class InformationAgent:
                         poi_type: str = "tourist_attraction", 
                         sort_by: str = "rating", 
                         radius: int = 10000):
+        """Get a list of attractions for a given location, ranked by LLM based on user preferences and weather."""
         location = (lat, lng)
-        initial_fetch_limit = 30 # Fetch 30 to be ranked by LLM
+        initial_fetch_limit = 30 # Fetch more initially to allow for better LLM ranking
         
         try:
             results = self.gmaps.places_nearby(
@@ -213,13 +221,13 @@ class InformationAgent:
         initial_pois = []
         print(f"[INFO_AGENT] Fetched {len(results)} raw places. Processing up to {initial_fetch_limit} for details.")
         
-        # Define the fields to request from Place Details API
-        # 'types' and 'photos' are NOT valid for Place Details 'fields' parameter.
+        # Define the fields to request from Place Details API.
+        # 'types' and 'photos' are not valid for Place Details 'fields' parameter.
         # 'types' are available from the places_nearby result.
         # 'photos' (photo_references) are available from places_nearby result.
         place_details_fields = [
             'name', 'rating', 'price_level', 'opening_hours', 'formatted_address', 
-            'geometry/location', # Basic geometry is enough, not full viewport unless needed
+            'geometry/location', # Basic geometry is sufficient
             'place_id', # Essential
             'user_ratings_total', 'website', 'editorial_summary', 
             'international_phone_number', 'permanently_closed', 'business_status'
@@ -243,7 +251,7 @@ class InformationAgent:
                          if photo_info_nearby.get('photo_reference'):
                             photo_references_from_place.append(photo_info_nearby['photo_reference'])
                 
-                # Now fetch details, excluding 'types' and 'photos' from fields
+                # Fetch details, excluding 'types' and 'photos' from fields
                 details_response = self.poi_api.get_poi_details(
                     place_id=pid,
                     fields=place_details_fields 
@@ -279,19 +287,19 @@ class InformationAgent:
                 initial_pois.append({
                     'id': pid, 
                     'name': details.get('name'), 
-                    'rating': details.get('rating'), # Will be None if not present
-                    'user_ratings_total': details.get('user_ratings_total'), # Will be None if not present
-                    'price_level': details.get('price_level'), # Will be None if not present
-                    'opening_hours': details.get('opening_hours', {}).get('weekday_text'), # Will be None if not present
-                    'address': details.get('formatted_address'), # Will be None if not present
-                    'location': location_data, # Ensured to be an object with lat/lng (possibly None)
+                    'rating': details.get('rating'), 
+                    'user_ratings_total': details.get('user_ratings_total'), 
+                    'price_level': details.get('price_level'), 
+                    'opening_hours': details.get('opening_hours', {}).get('weekday_text'), 
+                    'address': details.get('formatted_address'), 
+                    'location': location_data, 
                     'category': primary_category_from_place,
                     'types': place_types_list,
                     'estimated_duration': self.estimate_duration(primary_category_from_place, details),
-                    'website': details.get('website'), # Will be None if not present
+                    'website': details.get('website'), 
                     'description': description,
                     'photo_references': photo_references_from_place,
-                    'image_url': image_url # Will be None if no valid reference
+                    'image_url': image_url 
                 })
             except Exception as e:
                 print(f"[ERROR] Exception during processing of place_id {pid} in get_attractions: {e}")
@@ -317,6 +325,7 @@ class InformationAgent:
     def estimate_duration(self, category, details):
         """
         Estimate the duration for a given category and details.
+        Returns duration in hours.
         """
         category_duration = {
             'restaurant': 2,
@@ -349,12 +358,13 @@ class InformationAgent:
         """
         Route Planning (Simple A to B for multiple modes).
 
-        Input:
-            - origin: Starting point (address, place name, or lat/lng tuple/dict)
-            - destination: End point (address, place name, or lat/lng tuple/dict)
+        Args:
+            origin: Starting point (address, place name, or lat/lng tuple/dict)
+            destination: End point (address, place name, or lat/lng tuple/dict)
 
-        Output Format:
-            List[Dict[str, Any]] or empty list. Each dict represents a travel mode:
+        Returns:
+            List of dictionaries, each representing a travel mode, or an empty list.
+            Example format:
             [
                 {
                     'mode': str,                # e.g., 'driving', 'transit'
@@ -371,7 +381,7 @@ class InformationAgent:
         routes = []
         for mode in modes:
             try:
-                # Keep 'en' for consistent address resolution and international compatibility
+                # Using 'en' for consistent address resolution and international compatibility
                 directions = self.gmaps.directions(
                     origin, destination, mode=mode, language='en'
                 )
@@ -416,15 +426,16 @@ class InformationAgent:
         Plans an optimized route visiting a list of waypoints between an origin and destination.
         Uses the Google Maps Directions API with waypoint optimization (`optimize_waypoints=True`).
 
-        Input:
-            - origin: Starting point (address, place name, or lat/lng tuple/dict)
-            - destination: End point (address, place name, or lat/lng tuple/dict)
-            - waypoints: List of intermediate points (list of strings, lat/lng tuples/dicts)
-            - mode: Travel mode (default: 'driving'). Optimization works best for 'driving'.
-            - departure_time: Optional datetime object (default: now) for traffic estimation.
+        Args:
+            origin: Starting point (address, place name, or lat/lng tuple/dict)
+            destination: End point (address, place name, or lat/lng tuple/dict)
+            waypoints: List of intermediate points (list of strings, lat/lng tuples/dicts)
+            mode: Travel mode (default: 'driving'). Optimization works best for 'driving'.
+            departure_time: Optional datetime object (default: now) for traffic estimation.
 
-        Output Format:
-            Dict[str, Any] or None if no route is found.
+        Returns:
+            Dictionary with optimized route details, or None if no route is found.
+            Example format:
             {
                 'path_sequence': List[str],         # List of addresses in optimized order (Origin, WptX, WptY,..., Dest)
                 'waypoint_original_indices': List[int], # Order original waypoints were visited (0-based index)
@@ -475,7 +486,7 @@ class InformationAgent:
                 origin,
                 destination,
                 waypoints=waypoints,
-                optimize_waypoints=True, # <<< Key parameter for optimization
+                optimize_waypoints=True, # Key parameter for optimization
                 mode=mode,
                 departure_time=departure_time,
                 language='en'
@@ -541,30 +552,33 @@ class InformationAgent:
 
     def get_weather(self, lat: float, lng: float, start_date: str, duration: int, summary: bool = True):
         """
-        Weather Forecast:
+        Weather Forecast.
         
-        Input:
-            - lat: Latitude
-            - lng: Longitude
-            - start_date: Start date (YYYY-MM-DD)
-            - duration: Number of days
+        Args:
+            lat: Latitude
+            lng: Longitude
+            start_date: Start date (YYYY-MM-DD)
+            duration: Number of days
+            summary: Whether to include an LLM-generated summary.
             
-        Output:
-            Detailed weather forecast
-            
-        Example:
-            [
-                {
-                    "date": "2023-04-18",
-                    "max_temp": "22 °C",
-                    "min_temp": "15 °C",
-                    "precipitation": "0 mm",
-                    "wind_speed": "12 km/h",
-                    "precipitation_probability": "5%",
-                    "uv_index": "7"
-                },
-                ...
-            ]
+        Returns:
+            Dictionary containing detailed weather forecast and an optional summary.
+            Example:
+            {
+                'detailed_forecast': [
+                    {
+                        "date": "2023-04-18",
+                        "max_temp": "22 °C",
+                        "min_temp": "15 °C",
+                        "precipitation": "0 mm",
+                        "wind_speed": "12 km/h",
+                        "precipitation_probability": "5%",
+                        "uv_index": "7"
+                    },
+                    ...
+                ],
+                'summary': "Concise weather summary..." # or None
+            }
         """
         # Get detailed weather data first
         weather_data = self.weather_service.get_weather(lat, lng, start_date, duration)
@@ -608,21 +622,21 @@ class InformationAgent:
                            driver_age: int = 30, min_price: float = None, 
                            max_price: float = None, top_n: int = 5):
         """
-        Car Rental Search:
+        Car Rental Search.
         
-        Input:
-            - location: Location
-            - start_date: Pickup date
-            - end_date: Return date
-            - driver_age: Driver's age (default: 30)
-            - min_price: Minimum price (optional)
-            - max_price: Maximum price (optional)
-            - top_n: Number of results to return (default: 5)
+        Args:
+            location: Location (city name)
+            start_date: Pickup date (YYYY-MM-DD)
+            end_date: Return date (YYYY-MM-DD)
+            driver_age: Driver's age (default: 30)
+            min_price: Minimum price (optional)
+            max_price: Maximum price (optional)
+            top_n: Number of results to return (default: 5)
             
-        Output:
+        Returns:
             Top N car rental options, including car type, price, pickup/return locations, links, etc.
-            
-        Example:
+            Uses mock data if API is not configured or fails.
+            Example:
             [
                 {
                     "car_model": "Mitsubishi Mirage",
@@ -672,7 +686,7 @@ class InformationAgent:
             if cars and max_price is not None:
                 cars = [c for c in cars if c.get('price', 0) <= max_price]
                 
-            # Return top N results
+            # Return top N results or mock data if API returned nothing
             return cars[:top_n] if cars else self._get_mock_car_data(top_n)
             
         except Exception as e:
@@ -680,9 +694,8 @@ class InformationAgent:
             return self._get_mock_car_data()
             
             
-    # you could delete this function if the car rental service is working
     def _get_mock_car_data(self, top_n: int = 5):
-        
+        """Returns a list of mock car rental data."""
         mock_cars = [
             {
                 "car_model": "Toyota Corolla",
@@ -733,7 +746,7 @@ class InformationAgent:
         return mock_cars[:top_n]
 
     def search_nearby_places(self, lat: float, lng: float, radius: int = 500):
-        """Search for nearby restaurants
+        """Search for nearby restaurants and provide their details.
         
         Args:
             lat (float): Latitude
@@ -741,7 +754,8 @@ class InformationAgent:
             radius (int): Search radius (meters)
         
         Returns:
-            dict: Dictionary containing information about nearby restaurants
+            dict: Dictionary containing information about nearby restaurants (top 3 by rating).
+                  Returns mock data if API calls fail.
         """
         try:
             # Check if POI API is available
@@ -828,7 +842,7 @@ class InformationAgent:
             }
     
     def _get_restaurant_features(self, place):
-        """Get restaurant features info"""
+        """Get restaurant features (cuisine types) from place types."""
         features = []
         if 'types' in place:
             if 'chinese_restaurant' in place['types']:
@@ -843,13 +857,13 @@ class InformationAgent:
 
     def get_fuel_price(self, location: str):
         """
-        Get fuel prices for a specific location and date range
+        Get fuel prices for a specific location.
         
         Args:
-            location (str): Location name
+            location (str): Location name (city).
         
         Returns:
-            dict: Dictionary containing fuel prices for each date in the range
+            float: Fuel price in USD per gallon, or None if not found.
         """
         try:
             return get_gas_price(location)

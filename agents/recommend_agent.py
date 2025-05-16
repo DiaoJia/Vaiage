@@ -56,8 +56,8 @@ class RecommendAgent:
         # Sort by rating and duration
         filtered_attractions.sort(
             key=lambda x: (
-                x.get('rating', 0) or 0,  # Handle None values
-                -(x.get('estimated_duration', 0) or 0)  # Handle None values
+                x.get('rating', 0) or 0,  # Handle None values for rating
+                -(x.get('estimated_duration', 0) or 0)  # Handle None values for duration, sort descending
             ),
             reverse=True
         )
@@ -95,11 +95,9 @@ class RecommendAgent:
           ...
         ]
         """
-    # 考虑到LLM可能会根据用户的hobbies清一色地推荐某个类别的景点，我们考虑纳入第五个因素：category相对均衡性
-
-    # 考虑后备是一个很好的想法
+    
     def _score_attractions(self, user_prefs, attractions):
-        """Score attractions based on user preferences (fallback method)"""
+        """Score attractions based on user preferences (fallback method if LLM ranking is not used or fails)"""
         scored_attractions = []
         
         for attraction in attractions:
@@ -130,8 +128,7 @@ class RecommendAgent:
             
             scored_attractions.append((attraction["id"], score, attraction))
         
-        # Sort by score (descending)
-        # 有点类似于beam search的效果
+
         scored_attractions.sort(key=lambda x: x[1], reverse=True)
         
         # Return sorted attractions (full objects)
@@ -160,11 +157,3 @@ class RecommendAgent:
         
         return None
     
-
-    # 缓存 LLM 推荐结果（结合 hash(user_prefs+city)）
-	# •	避免重复算同一个用户偏好组合
-    # •	用户多次点击"推荐核心景点"
-	# •	相同用户偏好和城市，结果应该是一样的
-	# •	但 LLM 每次都重新调用，慢而且贵
-
-    # 所以我们可以对同一请求进行缓存 —— 相同输入 → 不再重复推理 → 返回缓存结果。

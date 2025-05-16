@@ -119,7 +119,7 @@ class RouteAgent:
             return route
     
     def _get_distance_matrix(self, spots):
-        """Get distance matrix between all pairs of spots"""
+        """Get distance matrix between all pairs of spots using Haversine formula."""
         n = len(spots)
         matrix = [[0 for _ in range(n)] for _ in range(n)]
         
@@ -144,7 +144,6 @@ class RouteAgent:
         if cache_key in self.distances_cache:
             return self.distances_cache[cache_key]
         
-        # Calculate straight-line distance (haversine formula)
         lat1, lon1 = spot1["location"]["lat"], spot1["location"]["lng"]
         lat2, lon2 = spot2["location"]["lat"], spot2["location"]["lng"]
         
@@ -383,8 +382,3 @@ class RouteAgent:
             "fuel_cost": round(fuel_cost, 2),
         }
     
-    # budget估算为什么全部放在route_agent里？是否应该强调交通成本？
-    
-    # 1. 交通成本估算不够细化
-	# •	目前 transport 是固定 daily cost，没有考虑景点之间真实距离
-	# •	没有基于 distance_matrix 动态估算路线中的交通成本

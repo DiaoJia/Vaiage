@@ -79,7 +79,7 @@ def process():
             workflows[session_id] = TravelGraph()
             print(f"[DEBUG] Recreated workflow for session: {session_id}")
         workflow = workflows[session_id]
-        # 只保留关键步骤信息
+        # Keep only critical step information for logging
         print(f"[DEBUG] Processing step: {data.get('step', 'chat')} for session: {session_id}")
         # Process the current step
         step_name = data.get('step', 'chat')
@@ -131,7 +131,7 @@ def stream():
         workflows[session_id] = TravelGraph()
         print(f"[DEBUG] Recreated workflow for session: {session_id}")
     workflow = workflows[session_id]
-    # 只保留关键步骤信息
+    # Keep only critical step information for logging
     print(f"[DEBUG] Streaming step for session: {session_id}")
     # Get parameters from request
     step_name = request.args.get('step', 'chat')

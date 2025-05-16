@@ -3,11 +3,11 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 class CommunicationAgent:
     def __init__(self, model_name="gpt-4o"):
-        """Initialize CommunicationAgent with AI model for communication"""
+        """Initialize CommunicationAgent with AI model for communication."""
         self.model = ChatOpenAI(model_name=model_name, temperature=0.7)
     
     def post_car_rental_request(self, location, duration, user_prefs):
-        """Generate car rental request post"""
+        """Generate car rental request post."""
         # Convert duration to integer if it's a string
         duration = int(duration) if isinstance(duration, str) else duration
         
@@ -54,7 +54,7 @@ class CommunicationAgent:
         }
     
     def handle_rental_response(self, rental_post, response_message):
-        """Handle response to car rental request"""
+        """Handle response to car rental request."""
         prompt = f"""
         A car rental company has responded to the following car rental request:
         
@@ -84,7 +84,7 @@ class CommunicationAgent:
         }
     
     def generate_booking_confirmation(self, itinerary, budget_estimate, car_rental=None, user_name=None):
-        """Generate booking confirmation message"""
+        """Generate booking confirmation message."""
         itinerary_summary = f"{len(itinerary)} days, starting on {itinerary[0]['date'] if itinerary else 'N/A'}"
         attractions_count = sum(len(day['spots']) for day in itinerary) if itinerary else 0
         name = user_name if user_name else "Traveler"

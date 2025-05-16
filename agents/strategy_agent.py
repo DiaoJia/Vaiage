@@ -134,7 +134,7 @@ class StrategyAgent:
                     daily_plan_raw = {}
                     continue
 
-                #景点列表: attractions_name
+                #: attractions_name
                 current_plan_attraction_names = []
                 for day_key in sorted(daily_plan_raw.keys()): # Ensure consistent order for validation
                     if isinstance(daily_plan_raw[day_key], list):
