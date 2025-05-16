@@ -1,66 +1,37 @@
-# Travel Planning System Evaluation
+# This is a code repo for Application Track of CS194
 
-This directory contains tools and data for evaluating the travel planning system.
+![poster](Vaiage.svg "poster")
 
-## Directory Structure
+## Overview
 
-- `eval.json` - Main evaluation data file containing test cases and results
-- `eval.py` - Core evaluation script
-- `collect_evaluation_data.py` - Script to collect evaluation data from the travel planning system
-- `llm_judge.py` - Script to evaluate travel plans using multiple LLMs
-- `analyze_evaluations.py` - Script to analyze evaluation results and generate statistics
-- `analysis/` - Directory containing evaluation analysis results
-  - `score_distribution.png` - Histogram of evaluation scores by model
-  - `case_statistics.csv` - Statistics for each evaluation case
-  - `model_statistics.csv` - Statistics for each evaluation model
-  - `overall_statistics.txt` - Overall evaluation statistics
-- `evaluation_collection.log` - Log file for data collection process
-- `llm_evaluation.log` - Log file for LLM evaluation process
+Vaiage is an AI-powered travel planning application designed to help users create personalized and optimized travel itineraries. It assists with everything from initial preference gathering to detailed daily plans, including attraction recommendations, route optimization, budget estimation, and car rental advice.
 
-## Evaluation Workflow
+## Features
 
-The evaluation process consists of three main steps:
+- **Conversational AI Chatbot**: Collects user travel preferences (destination, duration, budget, interests, etc.) through an interactive chat.
+- **Personalized Attraction Recommendations**: Leverages AI to suggest points of interest tailored to user preferences, considering factors like weather, ratings, and price levels.
+- **Dynamic Itinerary Planning**: Generates optimized daily travel plans, distributing selected attractions efficiently across the trip duration.
+- **Route Optimization**: Calculates optimal travel routes between planned attractions to minimize travel time.
+- **Weather Integration**: Fetches weather forecasts and incorporates this information into travel planning and recommendations.
+- **Car Rental Assistance**: Provides AI-driven advice on whether a car rental is beneficial and can search for car rental options.
+- **Budget Estimation**: Estimates the overall trip budget, breaking down costs for accommodation, food, transport, attractions, and potential car rental/fuel expenses.
+- **Map Data Generation**: Prepares data for visualizing attractions and routes on a map interface.
 
-1. **Data Collection** (`collect_evaluation_data.py`):
-   - Processes user requests through the travel planning system
-   - Collects recommendations, itineraries, and budgets
-   - Saves results to the evaluation JSON file
+## Tech Stack
 
-2. **LLM Evaluation** (`llm_judge.py`):
-   - Evaluates travel plans using multiple LLM models
-   - Assigns scores and provides justifications
-   - Updates the evaluation JSON file with results
+- **Core Language**: Python
+- **AI & LLMs**: Langchain, OpenAI API (GPT-4o, GPT-3.5-turbo)
+- **Mapping & Geolocation**: Google Maps Platform APIs (Geocoding, Places, Directions, Distance Matrix)
+- **Car Rentals**: RapidAPI (Booking.com API endpoint)
+- **Weather**: Open-Meteo API
+- **Fuel Prices**: Custom local data source (`data/global_fuel_prices.json`) and OpenAI for country/price estimation.
+- **Networking**: `http.client` (for car rental API), `requests` (for weather API)
+- **Route Optimization**: `networkx` (for TSP solving)
 
-3. **Analysis** (`analyze_evaluations.py`):
-   - Extracts scores from the evaluation data
-   - Generates histograms and statistics
-   - Saves results to the analysis directory
+## Setup
 
 ## Usage
 
-See the individual README files for detailed instructions:
+## Contributing
 
-- [Data Collection README](README_evaluation.md)
-- [LLM Evaluation README](README_llm_judge.md)
-- [Analysis README](README_analysis.md)
-
-## Quick Start
-
-To run the complete evaluation pipeline:
-
-1. Collect evaluation data:
-   ```bash
-   python collect_evaluation_data.py
-   ```
-
-2. Evaluate using LLM models:
-   ```bash
-   python llm_judge.py --api-key YOUR_API_KEY
-   ```
-
-3. Analyze results:
-   ```bash
-   python analyze_evaluations.py
-   ```
-
-All commands should be run from within the `evaluation` directory. 
+## License
